@@ -30,6 +30,9 @@
 			phy-handle = <&phy0>;
 			phy-mode = "rgmii";
 
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_rgmii1_default &pinctrl_mdio1_default>;
+
 			phy0: phy@0 {
 				compatible = "ethernet-phy-id001c.c915",
 					     "ethernet-phy-ieee802.3-c22";
@@ -44,6 +47,9 @@
 
 			phy-handle = <&phy1>;
 			phy-mode = "rgmii";
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_rgmii2_default &pinctrl_mdio2_default>;
 
 			phy1: phy@0 {
 				compatible = "ethernet-phy-id001c.c915",
