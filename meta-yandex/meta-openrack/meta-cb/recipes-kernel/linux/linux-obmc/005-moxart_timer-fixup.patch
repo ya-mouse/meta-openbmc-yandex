@@ -1,0 +1,11 @@
+--- kernel-source/drivers/clocksource/moxart_timer.c.orig	2016-11-10 20:40:18.000000000 +0300
++++ kernel-source/drivers/clocksource/moxart_timer.c	2016-11-10 20:48:34.516755921 +0300
+@@ -133,7 +133,7 @@ static int moxart_clkevt_next_event(unsi
+ 
+ 	moxart_disable(evt);
+ 
+-	u = readl(timer->base + TIMER1_BASE + REG_COUNT) - cycles;
++	u = (~0) - cycles;
+ 	writel(u, timer->base + TIMER1_BASE + REG_MATCH1);
+ 
+ 	moxart_enable(evt);

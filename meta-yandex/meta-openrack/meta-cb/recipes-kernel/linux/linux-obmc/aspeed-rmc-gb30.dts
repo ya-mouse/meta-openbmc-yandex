@@ -1,0 +1,110 @@
+/dts-v1/;
+
+#include "aspeed-g4.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/gpio/aspeed-gpio.h>
+
+/ {
+	model = "Gigabyte RMC v3.0";
+	compatible = "openbmc,common", "aspeed,ast2400";
+
+	aliases {
+		serial4 = &uart5;
+	};
+
+	chosen {
+		stdout-path = &uart5;
+		bootargs = "console=ttyS4,115200 earlyprintk";
+	};
+
+	memory {
+		reg = < 0x40000000 0x10000000 >;
+	};
+
+	ahb {
+		mac0: ethernet@1e660000 {
+			status = "okay";
+
+			no-hw-checksum;
+
+			phy-handle = <&phy0>;
+			phy-mode = "rgmii";
+
+			phy0: phy@0 {
+				compatible = "ethernet-phy-id001c.c915",
+					     "ethernet-phy-ieee802.3-c22";
+				reg = <0>;
+			};
+		};
+
+		mac1: ethernet@1e680000 {
+			status = "okay";
+
+			no-hw-checksum;
+
+			phy-handle = <&phy1>;
+			phy-mode = "rgmii";
+
+			phy1: phy@0 {
+				compatible = "ethernet-phy-id001c.c915",
+					     "ethernet-phy-ieee802.3-c22";
+				reg = <0>;
+			};
+		};
+
+		fmc@1e620000 {
+			reg = < 0x1e620000 0x94
+				0x20000000 0x02000000 >;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "aspeed,ast2400-fmc";
+			flash@0 {
+				reg = < 0 >;
+				compatible = "jedec,spi-nor" ;
+				/* label = "bmc"; */
+				/*
+				 * Possibly required props:
+				 * spi-max-frequency = <>
+				 * spi-tx-bus-width = <>
+				 * spi-rx-bus-width  = <>
+				 * m25p,fast-read
+				 * spi-cpol if inverse clock polarity (CPOL)
+				 * spi-cpha if shifted clock phase (CPHA)
+				 */
+/* #include "aspeed-rmc-32M-flash-layout.dtsi" */
+#include "aspeed-bmc-opp-flash-layout.dtsi"
+			};
+		};
+	};
+
+           leds {
+                compatible = "gpio-leds";
+                heartbeat {
+                    label = "heartbeat";
+                    gpios = <&gpio 14 GPIO_ACTIVE_LOW>;
+                    linux,default-trigger = "heartbeat";
+                };
+           };
+};
+
+&uart5 {
+	status = "okay";
+};
+
+&i2c8 {
+	status = "okay";
+
+	rtc@68 {
+		compatible = "maxim,ds3231";
+		reg = <0x68>;
+		// interrupts = <GPIOF0>
+	};
+};
+
+&i2c10 {
+	status = "okay";
+};
+
+&i2c11 {
+	status = "okay";
+};

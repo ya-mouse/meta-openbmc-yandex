@@ -1,0 +1,11 @@
+--- kernel-source/drivers/i2c/busses/i2c-aspeed.c.orig	2016-11-10 13:17:01.000000000 +0300
++++ kernel-source/drivers/i2c/busses/i2c-aspeed.c	2016-11-10 13:21:44.003137663 +0300
+@@ -1056,7 +1056,7 @@ static int ast_i2c_probe_controller(stru
+ 			continue;
+ 
+ 		of_platform_device_create(np, bus_id, &pdev->dev);
+-		of_node_put(np);
++//		of_node_put(np);
+ 	}
+ 
+ 	return 0;
