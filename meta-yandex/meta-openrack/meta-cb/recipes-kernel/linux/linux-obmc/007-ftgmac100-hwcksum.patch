@@ -1,0 +1,12 @@
+--- kernel-source/drivers/net/ethernet/faraday/ftgmac100.c.orig	2016-11-11 16:59:49.000000000 +0300
++++ kernel-source/drivers/net/ethernet/faraday/ftgmac100.c	2016-11-11 18:24:14.637722492 +0300
+@@ -1464,8 +1464,7 @@ static int ftgmac100_probe(struct platfo
+ 	 * in that case.
+ 	 */
+ 	netdev->features = NETIF_F_IP_CSUM | NETIF_F_GRO;
+-	if (priv->use_ncsi &&
+-	    of_get_property(pdev->dev.of_node, "no-hw-checksum", NULL))
++	if (of_get_property(pdev->dev.of_node, "no-hw-checksum", NULL))
+ 		netdev->features &= ~NETIF_F_IP_CSUM;
+ 
+ 
