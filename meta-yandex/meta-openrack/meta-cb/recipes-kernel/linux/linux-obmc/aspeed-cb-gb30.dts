@@ -23,16 +23,15 @@
 
 	ahb {
 		mac0: ethernet@1e660000 {
-/*			use-nc-si; */
 			status = "okay";
 
 			no-hw-checksum;
 
-			phy-handle = <&phy1>;
-			phy-mode = "rgmii";
-
 			pinctrl-names = "default";
 			pinctrl-0 = <&pinctrl_rgmii1_default &pinctrl_mdio1_default>;
+
+			phy-handle = <&phy1>;
+			phy-mode = "rgmii";
 
 			phy1: phy@0 {
 				compatible = "ethernet-phy-id001c.c915",
