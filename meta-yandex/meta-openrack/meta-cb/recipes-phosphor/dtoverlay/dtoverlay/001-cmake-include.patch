@@ -1,0 +1,11 @@
+--- dtoverlay/CMakeLists.txt.orig	2016-11-14 12:37:07.390260662 +0300
++++ dtoverlay/CMakeLists.txt	2016-11-14 12:36:43.930623919 +0300
+@@ -1,7 +1,7 @@
+ cmake_minimum_required(VERSION 2.6)
+ 
+ PROJECT(dtoverlay C)
+-ADD_DEFINITIONS(-Os -Wall --std=gnu99 -g3 -Ilibfdt -Idtovl -Ilibdtc)
++ADD_DEFINITIONS(-Os -Wall --std=gnu99 -g3 -I${CMAKE_CURRENT_SOURCE_DIR}/libfdt -I${CMAKE_CURRENT_SOURCE_DIR}/dtovl -I${CMAKE_CURRENT_SOURCE_DIR}/libdtc)
+ IF (CMAKE_COMPILER_IS_GNUCC)
+    ADD_DEFINITIONS (-ffunction-sections)
+ ENDIF ()
