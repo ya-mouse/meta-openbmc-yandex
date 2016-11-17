@@ -1,0 +1,17 @@
+--- kernel-source/drivers/net/dsa/b53/b53_priv.h.orig	2016-11-17 13:28:47.000000000 +0300
++++ kernel-source/drivers/net/dsa/b53/b53_priv.h	2016-11-17 13:54:58.186302644 +0300
+@@ -387,9 +387,13 @@ static inline int b53_switch_get_reset_g
+ 	}
+ }
+ #else
++#include <linux/of_gpio.h>
+ static inline int b53_switch_get_reset_gpio(struct b53_device *dev)
+ {
+-	return -ENOENT;
++	int gpio;
++	gpio = of_get_named_gpio_flags(dev->dev->of_node, "reset-gpios",
++				       0, NULL);
++	return gpio;
+ }
+ #endif
+ #endif
