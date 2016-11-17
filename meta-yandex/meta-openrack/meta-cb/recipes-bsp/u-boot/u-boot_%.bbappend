@@ -1,0 +1,5 @@
+FILESEXTRAPATHS_prepend := "${THISDIR}/u-boot:"
+SRC_URI += "file://01-Kconfig.patch"
+SRC_URI += "file://02-flags.patch"
+SRC_URI += "file://03-ethernet.patch"
+SRC_URI += "file://04-ast-g4-config.patch"
