@@ -53,12 +53,12 @@
 			pinctrl-names = "default";
 			pinctrl-0 = <&pinctrl_rgmii2_default &pinctrl_mdio2_default>;
 
-			phy-mode = "rgmii";
+			phy-mode = "gmii";
 
 			fixed-link {
 				speed = <1000>;
 				max-speed = <1000>;
-				duplex-full;
+				full-duplex;
 			};
 
 			mdio {
@@ -69,10 +69,10 @@
 					#address-cells = <1>;
 					#size-cells = <0>;
 					compatible = "brcm,bcm53128";
+					reset-gpios = <&gpio ASPEED_GPIO(H, 0) GPIO_ACTIVE_LOW>;
 					reg = <30>;
 
 					ports {
-/*
 						port0@0 {
 							reg = <0>;
 							label = "lan1";
@@ -97,7 +97,12 @@
 							reg = <4>;
 							label = "lan5";
 						};
-*/
+
+						port5@5 {
+							reg = <5>;
+							label = "lan6";
+						};
+
 						port6@6 {
 							reg = <6>;
 							label = "uplink";
@@ -106,12 +111,12 @@
 						port8@8 {
 							reg = <8>;
 							label = "cpu";
-							phy-mode = "rgmii-txid";
+							phy-mode = "gmii";
 							ethernet = <&mac1>;
 							fixed-link {
 								speed = <1000>;
 								max-speed = <1000>;
-								duplex-full;
+								full-duplex;
 							};
 						};
 					};
