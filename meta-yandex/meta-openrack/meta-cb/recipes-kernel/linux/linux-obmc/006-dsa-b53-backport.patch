@@ -4285,3 +4285,23 @@ diff -Naurp kernel-source/drivers/net/dsa/b53.orig/Makefile kernel-source/driver
  obj-$(CONFIG_NET_DSA_BCM_SF2)	+= bcm_sf2.o
 +
 +obj-y				+= b53/
+--- kernel-source/net/dsa/tag_brcm.c.orig	2016-11-17 14:28:14.971054665 +0300
++++ kernel-source/net/dsa/tag_brcm.c	2016-11-17 14:33:09.000000000 +0300
+@@ -127,7 +127,7 @@ static int brcm_tag_rcv(struct sk_buff *
+ 	source_port = brcm_tag[3] & BRCM_EG_PID_MASK;
+ 
+ 	/* Validate port against switch setup, either the port is totally */
+-	if (source_port >= DSA_MAX_PORTS || ds->ports[source_port] == NULL)
++	if (source_port >= DSA_MAX_PORTS || !ds->ports[source_port].netdev)
+ 		goto out_drop;
+ 
+ 	/* Remove Broadcom tag and update checksum */
+@@ -140,7 +140,7 @@ static int brcm_tag_rcv(struct sk_buff *
+ 
+ 	skb_push(skb, ETH_HLEN);
+ 	skb->pkt_type = PACKET_HOST;
+-	skb->dev = ds->ports[source_port];
++	skb->dev = ds->ports[source_port].netdev;
+ 	skb->protocol = eth_type_trans(skb, skb->dev);
+ 
+ 	skb->dev->stats.rx_packets++;
