@@ -38,7 +38,6 @@
 				#size-cells = <0>;
 				phy1: phy@0 {
 					compatible = "ethernet-phy-id001c.c915";
-/*						     "ethernet-phy-ieee802.3-c22"; */
 					reg = <0>;
 				};
 			};
@@ -70,7 +69,6 @@
 					#address-cells = <1>;
 					#size-cells = <0>;
 					compatible = "brcm,bcm53128";
-/*						     "ethernet-phy-ieee802.3-c22"; */
 					reg = <30>;
 
 					ports {
@@ -99,16 +97,16 @@
 							reg = <4>;
 							label = "lan5";
 						};
-
-						port5@5 {
-							reg = <5>;
-							label = "lan6";
-						};
 */
+						port6@6 {
+							reg = <6>;
+							label = "uplink";
+						};
+
 						port8@8 {
 							reg = <8>;
 							label = "cpu";
-							phy-mode = "rgmii";
+							phy-mode = "rgmii-txid";
 							ethernet = <&mac1>;
 							fixed-link {
 								speed = <1000>;
