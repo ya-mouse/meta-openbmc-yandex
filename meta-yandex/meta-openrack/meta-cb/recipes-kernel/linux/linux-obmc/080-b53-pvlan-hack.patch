@@ -1,0 +1,11 @@
+--- kernel-source/drivers/net/dsa/b53/b53_common.c.orig	2016-11-17 15:22:41.000000000 +0300
++++ kernel-source/drivers/net/dsa/b53/b53_common.c	2016-11-17 16:52:47.794767251 +0300
+@@ -487,7 +487,7 @@ static void b53_imp_vlan_setup(struct ds
+ 	 */
+ 	b53_for_each_port(dev, i) {
+ 		b53_read16(dev, B53_PVLAN_PAGE, B53_PVLAN_PORT_MASK(i), &pvlan);
+-		pvlan |= BIT(cpu_port);
++		pvlan |= 0x17f; // BIT(cpu_port);
+ 		b53_write16(dev, B53_PVLAN_PAGE, B53_PVLAN_PORT_MASK(i), pvlan);
+ 	}
+ }
