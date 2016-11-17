@@ -169,20 +169,23 @@
  	int i, err = 0;
  	u32 reg;
  
-@@ -1273,18 +1288,38 @@ static int ftgmac100_setup_mdio(struct n
+@@ -1273,18 +1288,41 @@ static int ftgmac100_setup_mdio(struct n
  	priv->mii_bus->read = ftgmac100_mdiobus_read;
  	priv->mii_bus->write = ftgmac100_mdiobus_write;
  
 -	for (i = 0; i < PHY_MAX_ADDR; i++)
 -		priv->mii_bus->irq[i] = PHY_POLL;
-+	np = priv->pdev->dev.of_node;
++	priv->mii_bus->parent = &priv->pdev->dev;
++	np = of_get_child_by_name(priv->pdev->dev.of_node, "mdio");
 +	if (np) {
 +		/* try dt phy registration */
++		printk("STARAT\n");
 +		err = of_mdiobus_register(priv->mii_bus, np);
 +
 +		/* fallback to standard phy registration if no phy were
 +		   found during dt phy registration */
-+		if (!err && !phy_find_first(priv->mii_bus)) {
++		printk("REGISTER: %p %d\n", np, err);
++		if (err != 0 && !phy_find_first(priv->mii_bus)) {
 +			for (i = 0; i < PHY_MAX_ADDR; i++) {
 +				struct phy_device *phydev;
 +

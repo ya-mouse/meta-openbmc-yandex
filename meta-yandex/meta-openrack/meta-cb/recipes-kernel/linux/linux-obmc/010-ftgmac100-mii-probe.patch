@@ -1,0 +1,40 @@
+--- kernel-source/drivers/net/ethernet/faraday/ftgmac100.c.orig	2016-11-17 06:06:25.000000000 +0300
++++ kernel-source/drivers/net/ethernet/faraday/ftgmac100.c	2016-11-17 06:26:00.845161813 +0300
+@@ -1124,6 +1124,12 @@ static int ftgmac100_open(struct net_dev
+ 	unsigned int status;
+ 	int err;
+ 
++	err = ftgmac100_mii_probe(priv);
++	if (err) {
++		netdev_err(netdev, "MII probe failed!\n");
++		goto err_mii_probe;
++	}
++
+ 	err = ftgmac100_alloc_buffers(priv);
+ 	if (err) {
+ 		netdev_err(netdev, "failed to allocate buffers\n");
+@@ -1183,6 +1189,7 @@ err_hw:
+ err_irq:
+ 	ftgmac100_free_buffers(priv);
+ err_alloc:
++err_mii_probe:
+ 	return err;
+ }
+ 
+@@ -1315,16 +1322,8 @@ static int ftgmac100_setup_mdio(struct n
+ 		goto err_register_mdiobus;
+ 	}
+ 
+-	err = ftgmac100_mii_probe(priv);
+-	if (err) {
+-		dev_err(&priv->pdev->dev, "MII Probe failed!\n");
+-		goto err_mii_probe;
+-	}
+-
+ 	return 0;
+ 
+-err_mii_probe:
+-	mdiobus_unregister(priv->mii_bus);
+ err_register_mdiobus:
+ 	mdiobus_free(priv->mii_bus);
+ 	return err;

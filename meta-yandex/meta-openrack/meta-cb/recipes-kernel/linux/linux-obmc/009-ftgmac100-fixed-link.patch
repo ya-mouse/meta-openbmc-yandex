@@ -1,0 +1,83 @@
+--- kernel-source/drivers/net/ethernet/faraday/ftgmac100.c.orig	2016-11-16 13:33:38.000000000 +0300
++++ kernel-source/drivers/net/ethernet/faraday/ftgmac100.c	2016-11-17 05:54:21.130364609 +0300
+@@ -878,6 +878,9 @@ static void ftgmac100_adjust_link(struct
+ 	struct phy_device *phydev = netdev->phydev;
+ 	int ier;
+ 
++	if (phydev->is_pseudo_fixed_link)
++		return;
++
+ 	if (phydev->speed == priv->old_speed)
+ 		return;
+ 
+@@ -904,12 +907,13 @@ static int ftgmac100_mii_probe(struct ft
+ 	struct net_device *netdev = priv->netdev;
+ 	struct phy_device *phydev;
+ 
++/*
+ 	phydev = phy_find_first(priv->mii_bus);
+ 	if (!phydev) {
+ 		netdev_err(netdev, "%s: no PHY found\n", netdev->name);
+ 		return -ENODEV;
+ 	}
+-
++*/
+ 	/* attach the mac to the phy */
+ 	if (priv->phy_node) {
+ 		phydev = of_phy_connect(netdev, priv->phy_node,
+@@ -1407,6 +1407,14 @@ static int ftgmac100_probe(struct platfo
+ 	netif_napi_add(netdev, &priv->napi, ftgmac100_poll, 64);
+ 
+ 	priv->phy_node = of_parse_phandle(pdev->dev.of_node, "phy-handle", 0);
++	if (!priv->phy_node && of_phy_is_fixed_link(pdev->dev.of_node)) {
++		if ((of_phy_register_fixed_link(pdev->dev.of_node) < 0)) {
++			err = -ENODEV;
++			goto err_req_mem;
++		}
++		printk("found fixed-link subnode\n");
++		priv->phy_node = of_node_get(pdev->dev.of_node);
++	}
+ 
+ 	priv->phy_interface = of_get_phy_mode(pdev->dev.of_node);
+ 	/* fallback to defaults */
+@@ -1455,9 +1463,6 @@ static int ftgmac100_probe(struct platfo
+ 			goto err_ncsi_dev;
+ 	} else {
+ 		priv->use_ncsi = false;
+-		err = ftgmac100_setup_mdio(netdev);
+-		if (err)
+-			goto err_setup_mdio;
+ 	}
+ 
+ 	/* We have to disable on-chip IP checksum functionality
+@@ -1468,7 +1473,6 @@ static int ftgmac100_probe(struct platfo
+ 	if (of_get_property(pdev->dev.of_node, "no-hw-checksum", NULL))
+ 		netdev->features &= ~NETIF_F_IP_CSUM;
+ 
+-
+ 	/* register network device */
+ 	err = register_netdev(netdev);
+ 	if (err) {
+@@ -1476,14 +1480,20 @@ static int ftgmac100_probe(struct platfo
+ 		goto err_register_netdev;
+ 	}
+ 
++	if (!priv->use_ncsi) {
++		err = ftgmac100_setup_mdio(netdev);
++		if (err)
++			goto err_setup_mdio;
++	}
++
+ 	netdev_info(netdev, "irq %d, mapped at %p\n", priv->irq, priv->base);
+ 
+ 	return 0;
+ 
++err_setup_mdio:
++	unregister_netdev(netdev);
+ err_ncsi_dev:
+ err_register_netdev:
+-	ftgmac100_destroy_mdio(netdev);
+-err_setup_mdio:
+ 	iounmap(priv->base);
+ err_ioremap:
+ 	release_resource(priv->res);
