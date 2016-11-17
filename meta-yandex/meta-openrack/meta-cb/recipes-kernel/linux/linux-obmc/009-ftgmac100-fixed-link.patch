@@ -5,7 +5,7 @@
  	int ier;
  
 +	if (phydev->is_pseudo_fixed_link)
-+		return;
++		phydev->irq = PHY_IGNORE_INTERRUPT;
 +
  	if (phydev->speed == priv->old_speed)
  		return;
