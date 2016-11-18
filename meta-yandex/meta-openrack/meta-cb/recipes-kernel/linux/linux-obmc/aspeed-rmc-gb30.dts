@@ -89,13 +89,25 @@
                 compatible = "gpio-leds";
                 heartbeat {
                     label = "heartbeat";
-                    gpios = <&gpio 14 GPIO_ACTIVE_LOW>;
+                    gpios = <&gpio ASPEED_GPIO(B, 6) GPIO_ACTIVE_LOW>;
                     linux,default-trigger = "heartbeat";
                 };
            };
 };
 
 &uart5 {
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+};
+
+&i2c6 {
+	status = "okay";
+};
+
+&i2c7 {
 	status = "okay";
 };
 
@@ -107,12 +119,16 @@
 		reg = <0x68>;
 		// interrupts = <GPIOF0>
 	};
+
+	tmp {
+		label = "TEMP1";
+		compatible = "national,lm75";
+		reg = <0x48>;
+	};
+	fru {
+		compatible = "atmel,24c02";
+		reg = <0x56>;
+		pagesize = <32>;
+	};
 };
 
-&i2c10 {
-	status = "okay";
-};
-
-&i2c11 {
-	status = "okay";
-};
