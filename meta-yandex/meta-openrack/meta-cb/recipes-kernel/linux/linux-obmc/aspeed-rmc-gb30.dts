@@ -14,7 +14,7 @@
 
 	chosen {
 		stdout-path = &uart5;
-		bootargs = "console=ttyS4,115200 earlyprintk";
+		bootargs = "console=ttyS4,115200 earlyprintk ramdisk_size=16384 panic=10";
 	};
 
 	memory {
@@ -22,44 +22,6 @@
 	};
 
 	ahb {
-		mac0: ethernet@1e660000 {
-			status = "okay";
-
-			no-hw-checksum;
-
-			phy-handle = <&phy0>;
-			phy-mode = "rgmii";
-
-			pinctrl-names = "default";
-			pinctrl-0 = <&pinctrl_rgmii1_default &pinctrl_mdio1_default>;
-
-			mdio {
-				phy0: phy@0 {
-					compatible = "ethernet-phy-id001c.c915";
-					reg = <0>;
-				};
-			};
-		};
-
-		mac1: ethernet@1e680000 {
-			status = "okay";
-
-			no-hw-checksum;
-
-			phy-handle = <&phy1>;
-			phy-mode = "rgmii";
-
-			pinctrl-names = "default";
-			pinctrl-0 = <&pinctrl_rgmii2_default &pinctrl_mdio2_default>;
-
-			mdio {
-				phy1: phy@0 {
-					compatible = "ethernet-phy-id001c.c915";
-					reg = <0>;
-				};
-			};
-		};
-
 		fmc@1e620000 {
 			reg = < 0x1e620000 0x94
 				0x20000000 0x02000000 >;
@@ -79,56 +41,41 @@
 				 * spi-cpol if inverse clock polarity (CPOL)
 				 * spi-cpha if shifted clock phase (CPHA)
 				 */
-/* #include "aspeed-rmc-32M-flash-layout.dtsi" */
 #include "aspeed-bmc-opp-flash-layout.dtsi"
 			};
 		};
 	};
 
-           leds {
-                compatible = "gpio-leds";
-                heartbeat {
-                    label = "heartbeat";
-                    gpios = <&gpio ASPEED_GPIO(B, 6) GPIO_ACTIVE_LOW>;
-                    linux,default-trigger = "heartbeat";
-                };
-           };
+	leds {
+		compatible = "gpio-leds";
+
+		heartbeat {
+			label = "heartbeat";
+			gpios = <&gpio ASPEED_GPIO(B, 6) GPIO_ACTIVE_LOW>;
+			linux,default-trigger = "heartbeat";
+		};
+	};
+};
+
+&mac0 {
+	status = "okay";
+
+	no-hw-checksum;
+
+	phy-handle = <&phy0>;
+	phy-mode = "rgmii";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_rgmii1_default &pinctrl_mdio1_default>;
+
+	mdio {
+		phy0: phy@0 {
+			compatible = "ethernet-phy-id001c.c915";
+			reg = <0>;
+		};
+	};
 };
 
 &uart5 {
 	status = "okay";
 };
-
-&i2c0 {
-	status = "okay";
-};
-
-&i2c6 {
-	status = "okay";
-};
-
-&i2c7 {
-	status = "okay";
-};
-
-&i2c8 {
-	status = "okay";
-
-	rtc@68 {
-		compatible = "maxim,ds3231";
-		reg = <0x68>;
-		// interrupts = <GPIOF0>
-	};
-
-	tmp {
-		label = "TEMP1";
-		compatible = "national,lm75";
-		reg = <0x48>;
-	};
-	fru {
-		compatible = "atmel,24c02";
-		reg = <0x56>;
-		pagesize = <32>;
-	};
-};
-
