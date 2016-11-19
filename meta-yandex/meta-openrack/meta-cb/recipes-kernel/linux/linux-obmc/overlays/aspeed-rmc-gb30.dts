@@ -14,7 +14,7 @@
 
 	chosen {
 		stdout-path = &uart5;
-		bootargs = "console=ttyS4,115200 earlyprintk ramdisk_size=16384 panic=10";
+		bootargs = "console=ttyS4,115200 earlyprintk ramdisk_size=16384 panic=10 root=/dev/ram0 rw";
 	};
 
 	memory {

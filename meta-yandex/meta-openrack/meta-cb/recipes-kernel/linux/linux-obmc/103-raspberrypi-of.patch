@@ -1,0 +1,1657 @@
+diff -Naurp source/drivers/of.orig/address.c source/drivers/of/address.c
+--- source/drivers/of.orig/address.c	2016-11-18 14:22:48.954635621 +0300
++++ source/drivers/of/address.c	2016-11-18 14:31:11.391101522 +0300
+@@ -1,4 +1,6 @@
+ 
++#define pr_fmt(fmt)	"OF: " fmt
++
+ #include <linux/device.h>
+ #include <linux/io.h>
+ #include <linux/ioport.h>
+@@ -24,10 +26,10 @@ static int __of_address_to_resource(stru
+ #ifdef DEBUG
+ static void of_dump_addr(const char *s, const __be32 *addr, int na)
+ {
+-	printk(KERN_DEBUG "%s", s);
++	pr_debug("%s", s);
+ 	while (na--)
+-		printk(" %08x", be32_to_cpu(*(addr++)));
+-	printk("\n");
++		pr_cont(" %08x", be32_to_cpu(*(addr++)));
++	pr_cont("\n");
+ }
+ #else
+ static void of_dump_addr(const char *s, const __be32 *addr, int na) { }
+@@ -68,7 +70,7 @@ static u64 of_bus_default_map(__be32 *ad
+ 	s  = of_read_number(range + na + pna, ns);
+ 	da = of_read_number(addr, na);
+ 
+-	pr_debug("OF: default map, cp=%llx, s=%llx, da=%llx\n",
++	pr_debug("default map, cp=%llx, s=%llx, da=%llx\n",
+ 		 (unsigned long long)cp, (unsigned long long)s,
+ 		 (unsigned long long)da);
+ 
+@@ -156,7 +158,7 @@ static u64 of_bus_pci_map(__be32 *addr,
+ 	s  = of_read_number(range + na + pna, ns);
+ 	da = of_read_number(addr + 1, na - 1);
+ 
+-	pr_debug("OF: PCI map, cp=%llx, s=%llx, da=%llx\n",
++	pr_debug("PCI map, cp=%llx, s=%llx, da=%llx\n",
+ 		 (unsigned long long)cp, (unsigned long long)s,
+ 		 (unsigned long long)da);
+ 
+@@ -381,7 +383,7 @@ static u64 of_bus_isa_map(__be32 *addr,
+ 	s  = of_read_number(range + na + pna, ns);
+ 	da = of_read_number(addr + 1, na - 1);
+ 
+-	pr_debug("OF: ISA map, cp=%llx, s=%llx, da=%llx\n",
++	pr_debug("ISA map, cp=%llx, s=%llx, da=%llx\n",
+ 		 (unsigned long long)cp, (unsigned long long)s,
+ 		 (unsigned long long)da);
+ 
+@@ -504,17 +506,17 @@ static int of_translate_one(struct devic
+ 	 */
+ 	ranges = of_get_property(parent, rprop, &rlen);
+ 	if (ranges == NULL && !of_empty_ranges_quirk(parent)) {
+-		pr_debug("OF: no ranges; cannot translate\n");
++		pr_debug("no ranges; cannot translate\n");
+ 		return 1;
+ 	}
+ 	if (ranges == NULL || rlen == 0) {
+ 		offset = of_read_number(addr, na);
+ 		memset(addr, 0, pna * 4);
+-		pr_debug("OF: empty ranges; 1:1 translation\n");
++		pr_debug("empty ranges; 1:1 translation\n");
+ 		goto finish;
+ 	}
+ 
+-	pr_debug("OF: walking ranges...\n");
++	pr_debug("walking ranges...\n");
+ 
+ 	/* Now walk through the ranges */
+ 	rlen /= 4;
+@@ -525,14 +527,14 @@ static int of_translate_one(struct devic
+ 			break;
+ 	}
+ 	if (offset == OF_BAD_ADDR) {
+-		pr_debug("OF: not found !\n");
++		pr_debug("not found !\n");
+ 		return 1;
+ 	}
+ 	memcpy(addr, ranges + na, 4 * pna);
+ 
+  finish:
+-	of_dump_addr("OF: parent translation for:", addr, pna);
+-	pr_debug("OF: with offset: %llx\n", (unsigned long long)offset);
++	of_dump_addr("parent translation for:", addr, pna);
++	pr_debug("with offset: %llx\n", (unsigned long long)offset);
+ 
+ 	/* Translate it into parent bus space */
+ 	return pbus->translate(addr, offset, pna);
+@@ -557,7 +559,7 @@ static u64 __of_translate_address(struct
+ 	int na, ns, pna, pns;
+ 	u64 result = OF_BAD_ADDR;
+ 
+-	pr_debug("OF: ** translation for device %s **\n", of_node_full_name(dev));
++	pr_debug("** translation for device %s **\n", of_node_full_name(dev));
+ 
+ 	/* Increase refcount at current level */
+ 	of_node_get(dev);
+@@ -571,14 +573,14 @@ static u64 __of_translate_address(struct
+ 	/* Count address cells & copy address locally */
+ 	bus->count_cells(dev, &na, &ns);
+ 	if (!OF_CHECK_COUNTS(na, ns)) {
+-		pr_debug("OF: Bad cell count for %s\n", of_node_full_name(dev));
++		pr_debug("Bad cell count for %s\n", of_node_full_name(dev));
+ 		goto bail;
+ 	}
+ 	memcpy(addr, in_addr, na * 4);
+ 
+-	pr_debug("OF: bus is %s (na=%d, ns=%d) on %s\n",
++	pr_debug("bus is %s (na=%d, ns=%d) on %s\n",
+ 	    bus->name, na, ns, of_node_full_name(parent));
+-	of_dump_addr("OF: translating address:", addr, na);
++	of_dump_addr("translating address:", addr, na);
+ 
+ 	/* Translate */
+ 	for (;;) {
+@@ -589,7 +591,7 @@ static u64 __of_translate_address(struct
+ 
+ 		/* If root, we have finished */
+ 		if (parent == NULL) {
+-			pr_debug("OF: reached root node\n");
++			pr_debug("reached root node\n");
+ 			result = of_read_number(addr, na);
+ 			break;
+ 		}
+@@ -598,12 +600,12 @@ static u64 __of_translate_address(struct
+ 		pbus = of_match_bus(parent);
+ 		pbus->count_cells(dev, &pna, &pns);
+ 		if (!OF_CHECK_COUNTS(pna, pns)) {
+-			pr_err("prom_parse: Bad cell count for %s\n",
++			pr_err("Bad cell count for %s\n",
+ 			       of_node_full_name(dev));
+ 			break;
+ 		}
+ 
+-		pr_debug("OF: parent bus is %s (na=%d, ns=%d) on %s\n",
++		pr_debug("parent bus is %s (na=%d, ns=%d) on %s\n",
+ 		    pbus->name, pna, pns, of_node_full_name(parent));
+ 
+ 		/* Apply bus translation */
+@@ -615,7 +617,7 @@ static u64 __of_translate_address(struct
+ 		ns = pns;
+ 		bus = pbus;
+ 
+-		of_dump_addr("OF: one level translation:", addr, na);
++		of_dump_addr("one level translation:", addr, na);
+ 	}
+  bail:
+ 	of_node_put(parent);
+@@ -853,8 +855,7 @@ int of_dma_get_range(struct device_node
+ 	}
+ 
+ 	if (!ranges) {
+-		pr_debug("%s: no dma-ranges found for node(%s)\n",
+-			 __func__, np->full_name);
++		pr_debug("no dma-ranges found for node(%s)\n", np->full_name);
+ 		ret = -ENODEV;
+ 		goto out;
+ 	}
+@@ -871,8 +872,8 @@ int of_dma_get_range(struct device_node
+ 	dmaaddr = of_read_number(ranges, naddr);
+ 	*paddr = of_translate_dma_address(np, ranges);
+ 	if (*paddr == OF_BAD_ADDR) {
+-		pr_err("%s: translation of DMA address(%pad) to CPU address failed node(%s)\n",
+-		       __func__, dma_addr, np->full_name);
++		pr_err("translation of DMA address(%pad) to CPU address failed node(%s)\n",
++		       dma_addr, np->full_name);
+ 		ret = -EINVAL;
+ 		goto out;
+ 	}
+diff -Naurp source/drivers/of.orig/base.c source/drivers/of/base.c
+--- source/drivers/of.orig/base.c	2016-11-18 14:22:48.954635621 +0300
++++ source/drivers/of/base.c	2016-11-18 14:31:12.219089083 +0300
+@@ -17,6 +17,9 @@
+  *      as published by the Free Software Foundation; either version
+  *      2 of the License, or (at your option) any later version.
+  */
++
++#define pr_fmt(fmt)	"OF: " fmt
++
+ #include <linux/console.h>
+ #include <linux/ctype.h>
+ #include <linux/cpu.h>
+@@ -130,7 +133,7 @@ static const char *safe_name(struct kobj
+ 	if (name == orig_name) {
+ 		name = kstrdup(orig_name, GFP_KERNEL);
+ 	} else {
+-		pr_warn("device-tree: Duplicate name in %s, renamed to \"%s\"\n",
++		pr_warn("Duplicate name in %s, renamed to \"%s\"\n",
+ 			kobject_name(kobj), name);
+ 	}
+ 	return name;
+@@ -204,7 +207,7 @@ void __init of_core_init(void)
+ 	of_kset = kset_create_and_add("devicetree", NULL, firmware_kobj);
+ 	if (!of_kset) {
+ 		mutex_unlock(&of_mutex);
+-		pr_err("devicetree: failed to register existing nodes\n");
++		pr_err("failed to register existing nodes\n");
+ 		return;
+ 	}
+ 	for_each_of_allnodes(np)
+@@ -499,6 +502,28 @@ int of_device_is_compatible(const struct
+ }
+ EXPORT_SYMBOL(of_device_is_compatible);
+ 
++/** Checks if the device is compatible with any of the entries in
++ *  a NULL terminated array of strings. Returns the best match
++ *  score or 0.
++ */
++int of_device_compatible_match(struct device_node *device,
++			       const char *const *compat)
++{
++	unsigned int tmp, score = 0;
++
++	if (!compat)
++		return 0;
++
++	while (*compat) {
++		tmp = of_device_is_compatible(device, *compat);
++		if (tmp > score)
++			score = tmp;
++		compat++;
++	}
++
++	return score;
++}
++
+ /**
+  * of_machine_is_compatible - Test root of device tree for a given compatible value
+  * @compat: compatible string to look for in root node's compatible property.
+@@ -2269,8 +2360,8 @@ struct device_node *of_graph_get_next_en
+ 		of_node_put(node);
+ 
+ 		if (!port) {
+-			pr_err("%s(): no port node found in %s\n",
+-			       __func__, parent->full_name);
++			pr_err("graph: no port node found in %s\n",
++			       parent->full_name);
+ 			return NULL;
+ 		}
+ 	} else {
+diff -Naurp source/drivers/of.orig/dynamic.c source/drivers/of/dynamic.c
+--- source/drivers/of.orig/dynamic.c	2016-11-18 14:22:48.954635621 +0300
++++ source/drivers/of/dynamic.c	2016-11-18 14:31:14.643052663 +0300
+@@ -6,6 +6,8 @@
+  * device tree nodes.
+  */
+ 
++#define pr_fmt(fmt)	"OF: " fmt
++
+ #include <linux/of.h>
+ #include <linux/spinlock.h>
+ #include <linux/slab.h>
+@@ -96,13 +98,13 @@ int of_reconfig_notify(unsigned long act
+ 	switch (action) {
+ 	case OF_RECONFIG_ATTACH_NODE:
+ 	case OF_RECONFIG_DETACH_NODE:
+-		pr_debug("of/notify %-15s %s\n", action_names[action],
++		pr_debug("notify %-15s %s\n", action_names[action],
+ 			pr->dn->full_name);
+ 		break;
+ 	case OF_RECONFIG_ADD_PROPERTY:
+ 	case OF_RECONFIG_REMOVE_PROPERTY:
+ 	case OF_RECONFIG_UPDATE_PROPERTY:
+-		pr_debug("of/notify %-15s %s:%s\n", action_names[action],
++		pr_debug("notify %-15s %s:%s\n", action_names[action],
+ 			pr->dn->full_name, pr->prop->name);
+ 		break;
+ 
+@@ -460,12 +462,12 @@ static void __of_changeset_entry_dump(st
+ 	case OF_RECONFIG_ADD_PROPERTY:
+ 	case OF_RECONFIG_REMOVE_PROPERTY:
+ 	case OF_RECONFIG_UPDATE_PROPERTY:
+-		pr_debug("of/cset<%p> %-15s %s/%s\n", ce, action_names[ce->action],
++		pr_debug("cset<%p> %-15s %s/%s\n", ce, action_names[ce->action],
+ 			ce->np->full_name, ce->prop->name);
+ 		break;
+ 	case OF_RECONFIG_ATTACH_NODE:
+ 	case OF_RECONFIG_DETACH_NODE:
+-		pr_debug("of/cset<%p> %-15s %s\n", ce, action_names[ce->action],
++		pr_debug("cset<%p> %-15s %s\n", ce, action_names[ce->action],
+ 			ce->np->full_name);
+ 		break;
+ 	}
+@@ -531,13 +533,13 @@ static void __of_changeset_entry_notify(
+ 		ret = of_property_notify(ce->action, ce->np, ce->prop, ce->old_prop);
+ 		break;
+ 	default:
+-		pr_err("%s: invalid devicetree changeset action: %i\n", __func__,
++		pr_err("invalid devicetree changeset action: %i\n",
+ 			(int)ce->action);
+ 		return;
+ 	}
+ 
+ 	if (ret)
+-		pr_err("%s: notifier error @%s\n", __func__, ce->np->full_name);
++		pr_err("changeset notifier error @%s\n", ce->np->full_name);
+ }
+ 
+ static int __of_changeset_entry_apply(struct of_changeset_entry *ce)
+@@ -568,8 +570,8 @@ static int __of_changeset_entry_apply(st
+ 
+ 		ret = __of_add_property(ce->np, ce->prop);
+ 		if (ret) {
+-			pr_err("%s: add_property failed @%s/%s\n",
+-				__func__, ce->np->full_name,
++			pr_err("changeset: add_property failed @%s/%s\n",
++				ce->np->full_name,
+ 				ce->prop->name);
+ 			break;
+ 		}
+@@ -577,8 +579,8 @@ static int __of_changeset_entry_apply(st
+ 	case OF_RECONFIG_REMOVE_PROPERTY:
+ 		ret = __of_remove_property(ce->np, ce->prop);
+ 		if (ret) {
+-			pr_err("%s: remove_property failed @%s/%s\n",
+-				__func__, ce->np->full_name,
++			pr_err("changeset: remove_property failed @%s/%s\n",
++				ce->np->full_name,
+ 				ce->prop->name);
+ 			break;
+ 		}
+@@ -596,8 +598,8 @@ static int __of_changeset_entry_apply(st
+ 
+ 		ret = __of_update_property(ce->np, ce->prop, &old_prop);
+ 		if (ret) {
+-			pr_err("%s: update_property failed @%s/%s\n",
+-				__func__, ce->np->full_name,
++			pr_err("changeset: update_property failed @%s/%s\n",
++				ce->np->full_name,
+ 				ce->prop->name);
+ 			break;
+ 		}
+@@ -677,24 +679,24 @@ int __of_changeset_apply(struct of_chang
+ 	int ret;
+ 
+ 	/* perform the rest of the work */
+-	pr_debug("of_changeset: applying...\n");
++	pr_debug("changeset: applying...\n");
+ 	list_for_each_entry(ce, &ocs->entries, node) {
+ 		ret = __of_changeset_entry_apply(ce);
+ 		if (ret) {
+-			pr_err("%s: Error applying changeset (%d)\n", __func__, ret);
++			pr_err("Error applying changeset (%d)\n", ret);
+ 			list_for_each_entry_continue_reverse(ce, &ocs->entries, node)
+ 				__of_changeset_entry_revert(ce);
+ 			return ret;
+ 		}
+ 	}
+-	pr_debug("of_changeset: applied, emitting notifiers.\n");
++	pr_debug("changeset: applied, emitting notifiers.\n");
+ 
+ 	/* drop the global lock while emitting notifiers */
+ 	mutex_unlock(&of_mutex);
+ 	list_for_each_entry(ce, &ocs->entries, node)
+ 		__of_changeset_entry_notify(ce, 0);
+ 	mutex_lock(&of_mutex);
+-	pr_debug("of_changeset: notifiers sent.\n");
++	pr_debug("changeset: notifiers sent.\n");
+ 
+ 	return 0;
+ }
+@@ -728,24 +730,24 @@ int __of_changeset_revert(struct of_chan
+ 	struct of_changeset_entry *ce;
+ 	int ret;
+ 
+-	pr_debug("of_changeset: reverting...\n");
++	pr_debug("changeset: reverting...\n");
+ 	list_for_each_entry_reverse(ce, &ocs->entries, node) {
+ 		ret = __of_changeset_entry_revert(ce);
+ 		if (ret) {
+-			pr_err("%s: Error reverting changeset (%d)\n", __func__, ret);
++			pr_err("Error reverting changeset (%d)\n", ret);
+ 			list_for_each_entry_continue(ce, &ocs->entries, node)
+ 				__of_changeset_entry_apply(ce);
+ 			return ret;
+ 		}
+ 	}
+-	pr_debug("of_changeset: reverted, emitting notifiers.\n");
++	pr_debug("changeset: reverted, emitting notifiers.\n");
+ 
+ 	/* drop the global lock while emitting notifiers */
+ 	mutex_unlock(&of_mutex);
+ 	list_for_each_entry_reverse(ce, &ocs->entries, node)
+ 		__of_changeset_entry_notify(ce, 1);
+ 	mutex_lock(&of_mutex);
+-	pr_debug("of_changeset: notifiers sent.\n");
++	pr_debug("changeset: notifiers sent.\n");
+ 
+ 	return 0;
+ }
+@@ -795,10 +797,9 @@ int of_changeset_action(struct of_change
+ 	struct of_changeset_entry *ce;
+ 
+ 	ce = kzalloc(sizeof(*ce), GFP_KERNEL);
+-	if (!ce) {
+-		pr_err("%s: Failed to allocate\n", __func__);
++	if (!ce)
+ 		return -ENOMEM;
+-	}
++
+ 	/* get a reference to the node */
+ 	ce->action = action;
+ 	ce->np = of_node_get(np);
+diff -Naurp source/drivers/of.orig/fdt_address.c source/drivers/of/fdt_address.c
+--- source/drivers/of.orig/fdt_address.c	2016-11-18 14:22:48.954635621 +0300
++++ source/drivers/of/fdt_address.c	2016-11-18 14:31:15.419041005 +0300
+@@ -12,6 +12,9 @@
+  * the Free Software Foundation; either version 2, or (at your option)
+  * any later version.
+  */
++
++#define pr_fmt(fmt)	"OF: fdt: " fmt
++
+ #include <linux/kernel.h>
+ #include <linux/libfdt.h>
+ #include <linux/of.h>
+@@ -30,7 +33,7 @@ static void __init of_dump_addr(const ch
+ 	pr_debug("%s", s);
+ 	while(na--)
+ 		pr_cont(" %08x", *(addr++));
+-	pr_debug("\n");
++	pr_cont("\n");
+ }
+ #else
+ static void __init of_dump_addr(const char *s, const __be32 *addr, int na) { }
+@@ -77,7 +80,7 @@ static u64 __init fdt_bus_default_map(__
+ 	s  = of_read_number(range + na + pna, ns);
+ 	da = of_read_number(addr, na);
+ 
+-	pr_debug("FDT: default map, cp=%llx, s=%llx, da=%llx\n",
++	pr_debug("default map, cp=%llx, s=%llx, da=%llx\n",
+ 	    cp, s, da);
+ 
+ 	if (da < cp || da >= (cp + s))
+@@ -123,11 +126,11 @@ static int __init fdt_translate_one(cons
+ 	if (rlen == 0) {
+ 		offset = of_read_number(addr, na);
+ 		memset(addr, 0, pna * 4);
+-		pr_debug("FDT: empty ranges, 1:1 translation\n");
++		pr_debug("empty ranges, 1:1 translation\n");
+ 		goto finish;
+ 	}
+ 
+-	pr_debug("FDT: walking ranges...\n");
++	pr_debug("walking ranges...\n");
+ 
+ 	/* Now walk through the ranges */
+ 	rlen /= 4;
+@@ -138,14 +141,14 @@ static int __init fdt_translate_one(cons
+ 			break;
+ 	}
+ 	if (offset == OF_BAD_ADDR) {
+-		pr_debug("FDT: not found !\n");
++		pr_debug("not found !\n");
+ 		return 1;
+ 	}
+ 	memcpy(addr, ranges + na, 4 * pna);
+ 
+  finish:
+-	of_dump_addr("FDT: parent translation for:", addr, pna);
+-	pr_debug("FDT: with offset: %llx\n", offset);
++	of_dump_addr("parent translation for:", addr, pna);
++	pr_debug("with offset: %llx\n", offset);
+ 
+ 	/* Translate it into parent bus space */
+ 	return pbus->translate(addr, offset, pna);
+@@ -170,12 +173,12 @@ static u64 __init fdt_translate_address(
+ 	int na, ns, pna, pns;
+ 	u64 result = OF_BAD_ADDR;
+ 
+-	pr_debug("FDT: ** translation for device %s **\n",
++	pr_debug("** translation for device %s **\n",
+ 		 fdt_get_name(blob, node_offset, NULL));
+ 
+ 	reg = fdt_getprop(blob, node_offset, "reg", &len);
+ 	if (!reg) {
+-		pr_err("FDT: warning: device tree node '%s' has no address.\n",
++		pr_err("warning: device tree node '%s' has no address.\n",
+ 			fdt_get_name(blob, node_offset, NULL));
+ 		goto bail;
+ 	}
+@@ -189,15 +192,15 @@ static u64 __init fdt_translate_address(
+ 	/* Cound address cells & copy address locally */
+ 	bus->count_cells(blob, parent, &na, &ns);
+ 	if (!OF_CHECK_COUNTS(na, ns)) {
+-		pr_err("FDT: Bad cell count for %s\n",
++		pr_err("Bad cell count for %s\n",
+ 		       fdt_get_name(blob, node_offset, NULL));
+ 		goto bail;
+ 	}
+ 	memcpy(addr, reg, na * 4);
+ 
+-	pr_debug("FDT: bus (na=%d, ns=%d) on %s\n",
++	pr_debug("bus (na=%d, ns=%d) on %s\n",
+ 		 na, ns, fdt_get_name(blob, parent, NULL));
+-	of_dump_addr("OF: translating address:", addr, na);
++	of_dump_addr("translating address:", addr, na);
+ 
+ 	/* Translate */
+ 	for (;;) {
+@@ -207,7 +210,7 @@ static u64 __init fdt_translate_address(
+ 
+ 		/* If root, we have finished */
+ 		if (parent < 0) {
+-			pr_debug("FDT: reached root node\n");
++			pr_debug("reached root node\n");
+ 			result = of_read_number(addr, na);
+ 			break;
+ 		}
+@@ -216,12 +219,12 @@ static u64 __init fdt_translate_address(
+ 		pbus = &of_busses[0];
+ 		pbus->count_cells(blob, parent, &pna, &pns);
+ 		if (!OF_CHECK_COUNTS(pna, pns)) {
+-			pr_err("FDT: Bad cell count for %s\n",
++			pr_err("Bad cell count for %s\n",
+ 				fdt_get_name(blob, node_offset, NULL));
+ 			break;
+ 		}
+ 
+-		pr_debug("FDT: parent bus (na=%d, ns=%d) on %s\n",
++		pr_debug("parent bus (na=%d, ns=%d) on %s\n",
+ 			 pna, pns, fdt_get_name(blob, parent, NULL));
+ 
+ 		/* Apply bus translation */
+@@ -234,7 +237,7 @@ static u64 __init fdt_translate_address(
+ 		ns = pns;
+ 		bus = pbus;
+ 
+-		of_dump_addr("FDT: one level translation:", addr, na);
++		of_dump_addr("one level translation:", addr, na);
+ 	}
+  bail:
+ 	return result;
+diff -Naurp source/drivers/of.orig/fdt.c source/drivers/of/fdt.c
+--- source/drivers/of.orig/fdt.c	2016-11-18 14:22:48.954635621 +0300
++++ source/drivers/of/fdt.c	2016-11-18 14:31:16.243028624 +0300
+@@ -9,6 +9,8 @@
+  * version 2 as published by the Free Software Foundation.
+  */
+ 
++#define pr_fmt(fmt)	"OF: fdt:" fmt
++
+ #include <linux/crc32.h>
+ #include <linux/kernel.h>
+ #include <linux/initrd.h>
+@@ -182,14 +184,12 @@ static void populate_properties(const vo
+ 
+ 		val = fdt_getprop_by_offset(blob, cur, &pname, &sz);
+ 		if (!val) {
+-			pr_warn("%s: Cannot locate property at 0x%x\n",
+-				__func__, cur);
++			pr_warn("Cannot locate property at 0x%x\n", cur);
+ 			continue;
+ 		}
+ 
+ 		if (!pname) {
+-			pr_warn("%s: Cannot find property name at 0x%x\n",
+-				__func__, cur);
++			pr_warn("Cannot find property name at 0x%x\n", cur);
+ 			continue;
+ 		}
+ 
+@@ -439,7 +439,7 @@ static int unflatten_dt_nodes(const void
+ 	}
+ 
+ 	if (offset < 0 && offset != -FDT_ERR_NOTFOUND) {
+-		pr_err("%s: Error %d processing FDT\n", __func__, offset);
++		pr_err("Error %d processing FDT\n", offset);
+ 		return -EINVAL;
+ 	}
+ 
+@@ -472,7 +472,8 @@ static int unflatten_dt_nodes(const void
+ static void *__unflatten_device_tree(const void *blob,
+ 				     struct device_node *dad,
+ 				     struct device_node **mynodes,
+-				     void *(*dt_alloc)(u64 size, u64 align))
++				     void *(*dt_alloc)(u64 size, u64 align),
++				     bool detached)
+ {
+ 	int size;
+ 	void *mem;
+@@ -516,6 +517,11 @@ static void *__unflatten_device_tree(con
+ 		pr_warning("End of tree marker overwritten: %08x\n",
+ 			   be32_to_cpup(mem + size));
+ 
++	if (detached && mynodes) {
++		of_node_set_flag(*mynodes, OF_DETACHED);
++		pr_debug("unflattened tree is detached\n");
++	}
++
+ 	pr_debug(" <- unflatten_device_tree()\n");
+ 	return mem;
+ }
+@@ -548,7 +554,8 @@ void *of_fdt_unflatten_tree(const unsign
+ 	void *mem;
+ 
+ 	mutex_lock(&of_fdt_unflatten_mutex);
+-	mem = __unflatten_device_tree(blob, dad, mynodes, &kernel_tree_alloc);
++	mem = __unflatten_device_tree(blob, dad, mynodes, &kernel_tree_alloc,
++				      true);
+ 	mutex_unlock(&of_fdt_unflatten_mutex);
+ 
+ 	return mem;
+@@ -744,6 +751,19 @@ int __init of_scan_flat_dt(int (*it)(uns
+ }
+ 
+ /**
++ * of_get_flat_dt_subnode_by_name - get the subnode by given name
++ *
++ * @node: the parent node
++ * @uname: the name of subnode
++ * @return offset of the subnode, or -FDT_ERR_NOTFOUND if there is none
++ */
++
++int of_get_flat_dt_subnode_by_name(unsigned long node, const char *uname)
++{
++	return fdt_subnode_offset(initial_boot_params, node, uname);
++}
++
++/**
+  * of_get_flat_dt_root - find the root node in the flat blob
+  */
+ unsigned long __init of_get_flat_dt_root(void)
+@@ -904,7 +924,7 @@ static inline void early_init_dt_check_f
+ 
+ #ifdef CONFIG_SERIAL_EARLYCON
+ 
+-static int __init early_init_dt_scan_chosen_serial(void)
++int __init early_init_dt_scan_chosen_stdout(void)
+ {
+ 	int offset;
+ 	const char *p, *q, *options = NULL;
+@@ -948,15 +968,6 @@ static int __init early_init_dt_scan_cho
+ 	}
+ 	return -ENODEV;
+ }
+-
+-static int __init setup_of_earlycon(char *buf)
+-{
+-	if (buf)
+-		return 0;
+-
+-	return early_init_dt_scan_chosen_serial();
+-}
+-early_param("earlycon", setup_of_earlycon);
+ #endif
+ 
+ /**
+@@ -1224,7 +1235,7 @@ bool __init early_init_dt_scan(void *par
+ void __init unflatten_device_tree(void)
+ {
+ 	__unflatten_device_tree(initial_boot_params, NULL, &of_root,
+-				early_init_dt_alloc_memory_arch);
++				early_init_dt_alloc_memory_arch, false);
+ 
+ 	/* Get pointer to "/chosen" and "/aliases" nodes for use everywhere */
+ 	of_alias_scan(early_init_dt_alloc_memory_arch);
+@@ -1281,7 +1292,7 @@ static int __init of_fdt_raw_init(void)
+ 
+ 	if (of_fdt_crc32 != crc32_be(~0, initial_boot_params,
+ 				     fdt_totalsize(initial_boot_params))) {
+-		pr_warn("fdt: not creating '/sys/firmware/fdt': CRC check failed\n");
++		pr_warn("not creating '/sys/firmware/fdt': CRC check failed\n");
+ 		return 0;
+ 	}
+ 	of_fdt_raw_attr.size = fdt_totalsize(initial_boot_params);
+diff -Naurp source/drivers/of.orig/irq.c source/drivers/of/irq.c
+--- source/drivers/of.orig/irq.c	2016-11-18 14:22:48.954635621 +0300
++++ source/drivers/of/irq.c	2016-11-18 14:31:17.223013900 +0300
+@@ -18,12 +18,15 @@
+  * driver.
+  */
+ 
++#define pr_fmt(fmt)	"OF: " fmt
++
+ #include <linux/device.h>
+ #include <linux/errno.h>
+ #include <linux/list.h>
+ #include <linux/module.h>
+ #include <linux/of.h>
+ #include <linux/of_irq.h>
++#include <linux/of_pci.h>
+ #include <linux/string.h>
+ #include <linux/slab.h>
+ 
+@@ -542,12 +545,15 @@ void __init of_irq_init(const struct of_
+ 
+ 			list_del(&desc->list);
+ 
++			of_node_set_flag(desc->dev, OF_POPULATED);
++
+ 			pr_debug("of_irq_init: init %s (%p), parent %p\n",
+ 				 desc->dev->full_name,
+ 				 desc->dev, desc->interrupt_parent);
+ 			ret = desc->irq_init_cb(desc->dev,
+ 						desc->interrupt_parent);
+ 			if (ret) {
++				of_node_clear_flag(desc->dev, OF_POPULATED);
+ 				kfree(desc);
+ 				continue;
+ 			}
+diff -Naurp source/drivers/of.orig/Kconfig source/drivers/of/Kconfig
+--- source/drivers/of.orig/Kconfig	2016-11-18 14:23:03.350420179 +0300
++++ source/drivers/of/Kconfig	2016-11-18 14:31:18.015002000 +0300
+@@ -74,6 +74,7 @@ config OF_NET
+ config OF_MDIO
+ 	def_tristate PHYLIB
+ 	depends on PHYLIB
++	select FIXED_PHY
+ 	help
+ 	  OpenFirmware MDIO bus (Ethernet PHY) accessors
+ 
+@@ -89,10 +90,6 @@ config OF_PCI_IRQ
+ 	help
+ 	  OpenFirmware PCI IRQ routing helpers
+ 
+-config OF_MTD
+-	depends on MTD
+-	def_bool y
+-
+ config OF_RESERVED_MEM
+ 	depends on OF_EARLY_FLATTREE
+ 	bool
+diff -Naurp source/drivers/of.orig/of_mdio.c source/drivers/of/of_mdio.c
+--- source/drivers/of.orig/of_mdio.c	2016-11-18 14:22:48.954635621 +0300
++++ source/drivers/of/of_mdio.c	2016-11-18 14:31:20.310967503 +0300
+@@ -19,6 +19,7 @@
+ #include <linux/of_gpio.h>
+ #include <linux/of_irq.h>
+ #include <linux/of_mdio.h>
++#include <linux/of_net.h>
+ #include <linux/module.h>
+ 
+ MODULE_AUTHOR("Grant Likely <grant.likely@secretlab.ca>");
+@@ -332,6 +333,41 @@ struct phy_device *of_phy_connect(struct
+ EXPORT_SYMBOL(of_phy_connect);
+ 
+ /**
++ * of_phy_get_and_connect
++ * - Get phy node and connect to the phy described in the device tree
++ * @dev: pointer to net_device claiming the phy
++ * @np: Pointer to device tree node for the net_device claiming the phy
++ * @hndlr: Link state callback for the network device
++ *
++ * If successful, returns a pointer to the phy_device with the embedded
++ * struct device refcount incremented by one, or NULL on failure. The
++ * refcount must be dropped by calling phy_disconnect() or phy_detach().
++ */
++struct phy_device *of_phy_get_and_connect(struct net_device *dev,
++					  struct device_node *np,
++					  void (*hndlr)(struct net_device *))
++{
++	phy_interface_t iface;
++	struct device_node *phy_np;
++	struct phy_device *phy;
++
++	iface = of_get_phy_mode(np);
++	if (iface < 0)
++		return NULL;
++
++	phy_np = of_parse_phandle(np, "phy-handle", 0);
++	if (!phy_np)
++		return NULL;
++
++	phy = of_phy_connect(dev, phy_np, hndlr, 0, iface);
++
++	of_node_put(phy_np);
++
++	return phy;
++}
++EXPORT_SYMBOL(of_phy_get_and_connect);
++
++/**
+  * of_phy_attach - Attach to a PHY without starting the state machine
+  * @dev: pointer to net_device claiming the phy
+  * @phy_np: Node pointer for the PHY
+@@ -361,7 +397,6 @@ struct phy_device *of_phy_attach(struct
+ }
+ EXPORT_SYMBOL(of_phy_attach);
+ 
+-#if defined(CONFIG_FIXED_PHY)
+ /*
+  * of_phy_is_fixed_link() and of_phy_register_fixed_link() must
+  * support two DT bindings:
+@@ -451,4 +486,3 @@ int of_phy_register_fixed_link(struct de
+ 	return -ENODEV;
+ }
+ EXPORT_SYMBOL(of_phy_register_fixed_link);
+-#endif
+diff -Naurp source/drivers/of.orig/of_numa.c source/drivers/of/of_numa.c
+--- source/drivers/of.orig/of_numa.c	2016-11-18 14:22:48.954635621 +0300
++++ source/drivers/of/of_numa.c	2016-11-18 14:31:21.946942922 +0300
+@@ -16,6 +16,8 @@
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++#define pr_fmt(fmt) "OF: NUMA: " fmt
++
+ #include <linux/of.h>
+ #include <linux/of_address.h>
+ #include <linux/nodemask.h>
+@@ -49,10 +51,9 @@ static void __init of_numa_parse_cpu_nod
+ 		if (r)
+ 			continue;
+ 
+-		pr_debug("NUMA: CPU on %u\n", nid);
++		pr_debug("CPU on %u\n", nid);
+ 		if (nid >= MAX_NUMNODES)
+-			pr_warn("NUMA: Node id %u exceeds maximum value\n",
+-				nid);
++			pr_warn("Node id %u exceeds maximum value\n", nid);
+ 		else
+ 			node_set(nid, numa_nodes_parsed);
+ 	}
+@@ -63,13 +64,9 @@ static int __init of_numa_parse_memory_n
+ 	struct device_node *np = NULL;
+ 	struct resource rsrc;
+ 	u32 nid;
+-	int r = 0;
+-
+-	for (;;) {
+-		np = of_find_node_by_type(np, "memory");
+-		if (!np)
+-			break;
++	int i, r;
+ 
++	for_each_node_by_type(np, "memory") {
+ 		r = of_property_read_u32(np, "numa-node-id", &nid);
+ 		if (r == -EINVAL)
+ 			/*
+@@ -78,27 +75,23 @@ static int __init of_numa_parse_memory_n
+ 			 * "numa-node-id" property
+ 			 */
+ 			continue;
+-		else if (r)
+-			/* some other error */
+-			break;
+ 
+-		r = of_address_to_resource(np, 0, &rsrc);
+-		if (r) {
+-			pr_err("NUMA: bad reg property in memory node\n");
+-			break;
++		if (nid >= MAX_NUMNODES) {
++			pr_warn("Node id %u exceeds maximum value\n", nid);
++			r = -EINVAL;
+ 		}
+ 
+-		pr_debug("NUMA:  base = %llx len = %llx, node = %u\n",
+-			 rsrc.start, rsrc.end - rsrc.start + 1, nid);
++		for (i = 0; !r && !of_address_to_resource(np, i, &rsrc); i++)
++			r = numa_add_memblk(nid, rsrc.start, rsrc.end + 1);
+ 
+-		r = numa_add_memblk(nid, rsrc.start,
+-				    rsrc.end - rsrc.start + 1);
+-		if (r)
+-			break;
++		if (!i || r) {
++			of_node_put(np);
++			pr_err("bad property in memory node\n");
++			return r ? : -EINVAL;
++		}
+ 	}
+-	of_node_put(np);
+ 
+-	return r;
++	return 0;
+ }
+ 
+ static int __init of_numa_parse_distance_map_v1(struct device_node *map)
+@@ -107,17 +100,17 @@ static int __init of_numa_parse_distance
+ 	int entry_count;
+ 	int i;
+ 
+-	pr_info("NUMA: parsing numa-distance-map-v1\n");
++	pr_info("parsing numa-distance-map-v1\n");
+ 
+ 	matrix = of_get_property(map, "distance-matrix", NULL);
+ 	if (!matrix) {
+-		pr_err("NUMA: No distance-matrix property in distance-map\n");
++		pr_err("No distance-matrix property in distance-map\n");
+ 		return -EINVAL;
+ 	}
+ 
+ 	entry_count = of_property_count_u32_elems(map, "distance-matrix");
+ 	if (entry_count <= 0) {
+-		pr_err("NUMA: Invalid distance-matrix\n");
++		pr_err("Invalid distance-matrix\n");
+ 		return -EINVAL;
+ 	}
+ 
+@@ -132,7 +125,7 @@ static int __init of_numa_parse_distance
+ 		matrix++;
+ 
+ 		numa_set_distance(nodea, nodeb, distance);
+-		pr_debug("NUMA:  distance[node%d -> node%d] = %d\n",
++		pr_debug("distance[node%d -> node%d] = %d\n",
+ 			 nodea, nodeb, distance);
+ 
+ 		/* Set default distance of node B->A same as A->B */
+@@ -166,8 +159,6 @@ int of_node_to_nid(struct device_node *d
+ 	np = of_node_get(device);
+ 
+ 	while (np) {
+-		struct device_node *parent;
+-
+ 		r = of_property_read_u32(np, "numa-node-id", &nid);
+ 		/*
+ 		 * -EINVAL indicates the property was not found, and
+@@ -178,22 +169,15 @@ int of_node_to_nid(struct device_node *d
+ 		if (r != -EINVAL)
+ 			break;
+ 
+-		parent = of_get_parent(np);
+-		of_node_put(np);
+-		np = parent;
++		np = of_get_next_parent(np);
+ 	}
+ 	if (np && r)
+-		pr_warn("NUMA: Invalid \"numa-node-id\" property in node %s\n",
++		pr_warn("Invalid \"numa-node-id\" property in node %s\n",
+ 			np->name);
+ 	of_node_put(np);
+ 
+-	if (!r) {
+-		if (nid >= MAX_NUMNODES)
+-			pr_warn("NUMA: Node id %u exceeds maximum value\n",
+-				nid);
+-		else
+-			return nid;
+-	}
++	if (!r)
++		return nid;
+ 
+ 	return NUMA_NO_NODE;
+ }
+diff -Naurp source/drivers/of.orig/of_pci.c source/drivers/of/of_pci.c
+--- source/drivers/of.orig/of_pci.c	2016-11-18 14:22:48.954635621 +0300
++++ source/drivers/of/of_pci.c	2016-11-18 14:31:22.842929459 +0300
+@@ -1,3 +1,5 @@
++#define pr_fmt(fmt)	"OF: PCI: " fmt
++
+ #include <linux/kernel.h>
+ #include <linux/export.h>
+ #include <linux/of.h>
+@@ -138,7 +140,7 @@ void of_pci_check_probe_only(void)
+ 	else
+ 		pci_clear_flags(PCI_PROBE_ONLY);
+ 
+-	pr_info("PCI: PROBE_ONLY %sabled\n", val ? "en" : "dis");
++	pr_info("PROBE_ONLY %sabled\n", val ? "en" : "dis");
+ }
+ EXPORT_SYMBOL_GPL(of_pci_check_probe_only);
+ 
+@@ -181,7 +183,7 @@ int of_pci_get_host_bridge_resources(str
+ 	if (!bus_range)
+ 		return -ENOMEM;
+ 
+-	pr_info("PCI host bridge %s ranges:\n", dev->full_name);
++	pr_info("host bridge %s ranges:\n", dev->full_name);
+ 
+ 	err = of_pci_parse_bus_range(dev, bus_range);
+ 	if (err) {
+@@ -306,3 +308,105 @@ struct msi_controller *of_pci_find_msi_c
+ EXPORT_SYMBOL_GPL(of_pci_find_msi_chip_by_node);
+ 
+ #endif /* CONFIG_PCI_MSI */
++
++/**
++ * of_pci_map_rid - Translate a requester ID through a downstream mapping.
++ * @np: root complex device node.
++ * @rid: PCI requester ID to map.
++ * @map_name: property name of the map to use.
++ * @map_mask_name: optional property name of the mask to use.
++ * @target: optional pointer to a target device node.
++ * @id_out: optional pointer to receive the translated ID.
++ *
++ * Given a PCI requester ID, look up the appropriate implementation-defined
++ * platform ID and/or the target device which receives transactions on that
++ * ID, as per the "iommu-map" and "msi-map" bindings. Either of @target or
++ * @id_out may be NULL if only the other is required. If @target points to
++ * a non-NULL device node pointer, only entries targeting that node will be
++ * matched; if it points to a NULL value, it will receive the device node of
++ * the first matching target phandle, with a reference held.
++ *
++ * Return: 0 on success or a standard error code on failure.
++ */
++int of_pci_map_rid(struct device_node *np, u32 rid,
++		   const char *map_name, const char *map_mask_name,
++		   struct device_node **target, u32 *id_out)
++{
++	u32 map_mask, masked_rid;
++	int map_len;
++	const __be32 *map = NULL;
++
++	if (!np || !map_name || (!target && !id_out))
++		return -EINVAL;
++
++	map = of_get_property(np, map_name, &map_len);
++	if (!map) {
++		if (target)
++			return -ENODEV;
++		/* Otherwise, no map implies no translation */
++		*id_out = rid;
++		return 0;
++	}
++
++	if (!map_len || map_len % (4 * sizeof(*map))) {
++		pr_err("%s: Error: Bad %s length: %d\n", np->full_name,
++			map_name, map_len);
++		return -EINVAL;
++	}
++
++	/* The default is to select all bits. */
++	map_mask = 0xffffffff;
++
++	/*
++	 * Can be overridden by "{iommu,msi}-map-mask" property.
++	 * If of_property_read_u32() fails, the default is used.
++	 */
++	if (map_mask_name)
++		of_property_read_u32(np, map_mask_name, &map_mask);
++
++	masked_rid = map_mask & rid;
++	for ( ; map_len > 0; map_len -= 4 * sizeof(*map), map += 4) {
++		struct device_node *phandle_node;
++		u32 rid_base = be32_to_cpup(map + 0);
++		u32 phandle = be32_to_cpup(map + 1);
++		u32 out_base = be32_to_cpup(map + 2);
++		u32 rid_len = be32_to_cpup(map + 3);
++
++		if (rid_base & ~map_mask) {
++			pr_err("%s: Invalid %s translation - %s-mask (0x%x) ignores rid-base (0x%x)\n",
++				np->full_name, map_name, map_name,
++				map_mask, rid_base);
++			return -EFAULT;
++		}
++
++		if (masked_rid < rid_base || masked_rid >= rid_base + rid_len)
++			continue;
++
++		phandle_node = of_find_node_by_phandle(phandle);
++		if (!phandle_node)
++			return -ENODEV;
++
++		if (target) {
++			if (*target)
++				of_node_put(phandle_node);
++			else
++				*target = phandle_node;
++
++			if (*target != phandle_node)
++				continue;
++		}
++
++		if (id_out)
++			*id_out = masked_rid - rid_base + out_base;
++
++		pr_debug("%s: %s, using mask %08x, rid-base: %08x, out-base: %08x, length: %08x, rid: %08x -> %08x\n",
++			np->full_name, map_name, map_mask, rid_base, out_base,
++			rid_len, rid, *id_out);
++		return 0;
++	}
++
++	pr_err("%s: Invalid %s translation - no match for rid 0x%x on %s\n",
++		np->full_name, map_name, rid,
++		target && *target ? (*target)->full_name : "any target");
++	return -EFAULT;
++}
+diff -Naurp source/drivers/of.orig/of_reserved_mem.c source/drivers/of/of_reserved_mem.c
+--- source/drivers/of.orig/of_reserved_mem.c	2016-11-18 14:22:48.958635561 +0300
++++ source/drivers/of/of_reserved_mem.c	2016-11-18 14:31:25.286892737 +0300
+@@ -13,6 +13,8 @@
+  * License or (at your optional) any later version of the license.
+  */
+ 
++#define pr_fmt(fmt)	"OF: reserved mem: " fmt
++
+ #include <linux/err.h>
+ #include <linux/of.h>
+ #include <linux/of_fdt.h>
+@@ -21,6 +23,7 @@
+ #include <linux/sizes.h>
+ #include <linux/of_reserved_mem.h>
+ #include <linux/sort.h>
++#include <linux/slab.h>
+ 
+ #define MAX_RESERVED_REGIONS	16
+ static struct reserved_mem reserved_mem[MAX_RESERVED_REGIONS];
+@@ -75,7 +78,7 @@ void __init fdt_reserved_mem_save_node(u
+ 	struct reserved_mem *rmem = &reserved_mem[reserved_mem_count];
+ 
+ 	if (reserved_mem_count == ARRAY_SIZE(reserved_mem)) {
+-		pr_err("Reserved memory: not enough space all defined regions.\n");
++		pr_err("not enough space all defined regions.\n");
+ 		return;
+ 	}
+ 
+@@ -108,8 +111,7 @@ static int __init __reserved_mem_alloc_s
+ 		return -EINVAL;
+ 
+ 	if (len != dt_root_size_cells * sizeof(__be32)) {
+-		pr_err("Reserved memory: invalid size property in '%s' node.\n",
+-				uname);
++		pr_err("invalid size property in '%s' node.\n", uname);
+ 		return -EINVAL;
+ 	}
+ 	size = dt_mem_next_cell(dt_root_size_cells, &prop);
+@@ -119,7 +121,7 @@ static int __init __reserved_mem_alloc_s
+ 	prop = of_get_flat_dt_prop(node, "alignment", &len);
+ 	if (prop) {
+ 		if (len != dt_root_addr_cells * sizeof(__be32)) {
+-			pr_err("Reserved memory: invalid alignment property in '%s' node.\n",
++			pr_err("invalid alignment property in '%s' node.\n",
+ 				uname);
+ 			return -EINVAL;
+ 		}
+@@ -141,7 +143,7 @@ static int __init __reserved_mem_alloc_s
+ 	if (prop) {
+ 
+ 		if (len % t_len != 0) {
+-			pr_err("Reserved memory: invalid alloc-ranges property in '%s', skipping node.\n",
++			pr_err("invalid alloc-ranges property in '%s', skipping node.\n",
+ 			       uname);
+ 			return -EINVAL;
+ 		}
+@@ -156,7 +158,7 @@ static int __init __reserved_mem_alloc_s
+ 			ret = early_init_dt_alloc_reserved_memory_arch(size,
+ 					align, start, end, nomap, &base);
+ 			if (ret == 0) {
+-				pr_debug("Reserved memory: allocated memory for '%s' node: base %pa, size %ld MiB\n",
++				pr_debug("allocated memory for '%s' node: base %pa, size %ld MiB\n",
+ 					uname, &base,
+ 					(unsigned long)size / SZ_1M);
+ 				break;
+@@ -168,13 +170,12 @@ static int __init __reserved_mem_alloc_s
+ 		ret = early_init_dt_alloc_reserved_memory_arch(size, align,
+ 							0, 0, nomap, &base);
+ 		if (ret == 0)
+-			pr_debug("Reserved memory: allocated memory for '%s' node: base %pa, size %ld MiB\n",
++			pr_debug("allocated memory for '%s' node: base %pa, size %ld MiB\n",
+ 				uname, &base, (unsigned long)size / SZ_1M);
+ 	}
+ 
+ 	if (base == 0) {
+-		pr_info("Reserved memory: failed to allocate memory for node '%s'\n",
+-			uname);
++		pr_info("failed to allocate memory for node '%s'\n", uname);
+ 		return -ENOMEM;
+ 	}
+ 
+@@ -203,7 +204,7 @@ static int __init __reserved_mem_init_no
+ 			continue;
+ 
+ 		if (initfn(rmem) == 0) {
+-			pr_info("Reserved memory: initialized node %s, compatible id %s\n",
++			pr_info("initialized node %s, compatible id %s\n",
+ 				rmem->name, compat);
+ 			return 0;
+ 		}
+@@ -245,7 +246,7 @@ static void __init __rmem_check_for_over
+ 
+ 			this_end = this->base + this->size;
+ 			next_end = next->base + next->size;
+-			pr_err("Reserved memory: OVERLAP DETECTED!\n%s (%pa--%pa) overlaps with %s (%pa--%pa)\n",
++			pr_err("OVERLAP DETECTED!\n%s (%pa--%pa) overlaps with %s (%pa--%pa)\n",
+ 			       this->name, &this->base, &this_end,
+ 			       next->name, &next->base, &next_end);
+ 		}
+@@ -296,53 +297,95 @@ static inline struct reserved_mem *__fin
+ 	return NULL;
+ }
+ 
++struct rmem_assigned_device {
++	struct device *dev;
++	struct reserved_mem *rmem;
++	struct list_head list;
++};
++
++static LIST_HEAD(of_rmem_assigned_device_list);
++static DEFINE_MUTEX(of_rmem_assigned_device_mutex);
++
+ /**
+- * of_reserved_mem_device_init() - assign reserved memory region to given device
++ * of_reserved_mem_device_init_by_idx() - assign reserved memory region to
++ *					  given device
++ * @dev:	Pointer to the device to configure
++ * @np:		Pointer to the device_node with 'reserved-memory' property
++ * @idx:	Index of selected region
+  *
+- * This function assign memory region pointed by "memory-region" device tree
+- * property to the given device.
++ * This function assigns respective DMA-mapping operations based on reserved
++ * memory region specified by 'memory-region' property in @np node to the @dev
++ * device. When driver needs to use more than one reserved memory region, it
++ * should allocate child devices and initialize regions by name for each of
++ * child device.
++ *
++ * Returns error code or zero on success.
+  */
+-int of_reserved_mem_device_init(struct device *dev)
++int of_reserved_mem_device_init_by_idx(struct device *dev,
++				       struct device_node *np, int idx)
+ {
++	struct rmem_assigned_device *rd;
++	struct device_node *target;
+ 	struct reserved_mem *rmem;
+-	struct device_node *np;
+ 	int ret;
+ 
+-	np = of_parse_phandle(dev->of_node, "memory-region", 0);
+-	if (!np)
++	if (!np || !dev)
++		return -EINVAL;
++
++	target = of_parse_phandle(np, "memory-region", idx);
++	if (!target)
+ 		return -ENODEV;
+ 
+-	rmem = __find_rmem(np);
+-	of_node_put(np);
++	rmem = __find_rmem(target);
++	of_node_put(target);
+ 
+ 	if (!rmem || !rmem->ops || !rmem->ops->device_init)
+ 		return -EINVAL;
+ 
++	rd = kmalloc(sizeof(struct rmem_assigned_device), GFP_KERNEL);
++	if (!rd)
++		return -ENOMEM;
++
+ 	ret = rmem->ops->device_init(rmem, dev);
+-	if (ret == 0)
++	if (ret == 0) {
++		rd->dev = dev;
++		rd->rmem = rmem;
++
++		mutex_lock(&of_rmem_assigned_device_mutex);
++		list_add(&rd->list, &of_rmem_assigned_device_list);
++		mutex_unlock(&of_rmem_assigned_device_mutex);
++
+ 		dev_info(dev, "assigned reserved memory node %s\n", rmem->name);
++	} else {
++		kfree(rd);
++	}
+ 
+ 	return ret;
+ }
+-EXPORT_SYMBOL_GPL(of_reserved_mem_device_init);
++EXPORT_SYMBOL_GPL(of_reserved_mem_device_init_by_idx);
+ 
+ /**
+  * of_reserved_mem_device_release() - release reserved memory device structures
++ * @dev:	Pointer to the device to deconfigure
+  *
+  * This function releases structures allocated for memory region handling for
+  * the given device.
+  */
+ void of_reserved_mem_device_release(struct device *dev)
+ {
+-	struct reserved_mem *rmem;
+-	struct device_node *np;
++	struct rmem_assigned_device *rd;
++	struct reserved_mem *rmem = NULL;
+ 
+-	np = of_parse_phandle(dev->of_node, "memory-region", 0);
+-	if (!np)
+-		return;
+-
+-	rmem = __find_rmem(np);
+-	of_node_put(np);
++	mutex_lock(&of_rmem_assigned_device_mutex);
++	list_for_each_entry(rd, &of_rmem_assigned_device_list, list) {
++		if (rd->dev == dev) {
++			rmem = rd->rmem;
++			list_del(&rd->list);
++			kfree(rd);
++			break;
++		}
++	}
++	mutex_unlock(&of_rmem_assigned_device_mutex);
+ 
+ 	if (!rmem || !rmem->ops || !rmem->ops->device_release)
+ 		return;
+diff -Naurp source/drivers/of.orig/overlay.c source/drivers/of/overlay.c
+--- source/drivers/of.orig/overlay.c	2016-11-18 14:22:48.958635561 +0300
++++ source/drivers/of/overlay.c	2016-11-18 14:31:26.182879274 +0300
+@@ -8,7 +8,9 @@
+  * modify it under the terms of the GNU General Public License
+  * version 2 as published by the Free Software Foundation.
+  */
+-#undef DEBUG
++
++#define pr_fmt(fmt)	"OF: overlay: " fmt
++
+ #include <linux/kernel.h>
+ #include <linux/module.h>
+ #include <linux/of.h>
+@@ -137,8 +139,8 @@ static int of_overlay_apply_one(struct o
+ 	for_each_property_of_node(overlay, prop) {
+ 		ret = of_overlay_apply_single_property(ov, target, prop);
+ 		if (ret) {
+-			pr_err("%s: Failed to apply prop @%s/%s\n",
+-				__func__, target->full_name, prop->name);
++			pr_err("Failed to apply prop @%s/%s\n",
++			       target->full_name, prop->name);
+ 			return ret;
+ 		}
+ 	}
+@@ -146,9 +148,8 @@ static int of_overlay_apply_one(struct o
+ 	for_each_child_of_node(overlay, child) {
+ 		ret = of_overlay_apply_single_device_node(ov, target, child);
+ 		if (ret != 0) {
+-			pr_err("%s: Failed to apply single node @%s/%s\n",
+-					__func__, target->full_name,
+-					child->name);
++			pr_err("Failed to apply single node @%s/%s\n",
++			       target->full_name, child->name);
+ 			of_node_put(child);
+ 			return ret;
+ 		}
+@@ -176,8 +177,7 @@ static int of_overlay_apply(struct of_ov
+ 
+ 		err = of_overlay_apply_one(ov, ovinfo->target, ovinfo->overlay);
+ 		if (err != 0) {
+-			pr_err("%s: overlay failed '%s'\n",
+-				__func__, ovinfo->target->full_name);
++			pr_err("apply failed '%s'\n", ovinfo->target->full_name);
+ 			return err;
+ 		}
+ 	}
+@@ -208,7 +208,7 @@ static struct device_node *find_target_n
+ 	if (ret == 0)
+ 		return of_find_node_by_path(path);
+ 
+-	pr_err("%s: Failed to find target for node %p (%s)\n", __func__,
++	pr_err("Failed to find target for node %p (%s)\n",
+ 		info_node, info_node->name);
+ 
+ 	return NULL;
+@@ -355,8 +355,6 @@ int of_overlay_create(struct device_node
+ 
+ 	id = idr_alloc(&ov_idr, ov, 0, 0, GFP_KERNEL);
+ 	if (id < 0) {
+-		pr_err("%s: idr_alloc() failed for tree@%s\n",
+-				__func__, tree->full_name);
+ 		err = id;
+ 		goto err_destroy_trans;
+ 	}
+@@ -365,26 +363,21 @@ int of_overlay_create(struct device_node
+ 	/* build the overlay info structures */
+ 	err = of_build_overlay_info(ov, tree);
+ 	if (err) {
+-		pr_err("%s: of_build_overlay_info() failed for tree@%s\n",
+-				__func__, tree->full_name);
++		pr_err("of_build_overlay_info() failed for tree@%s\n",
++		       tree->full_name);
+ 		goto err_free_idr;
+ 	}
+ 
+ 	/* apply the overlay */
+ 	err = of_overlay_apply(ov);
+-	if (err) {
+-		pr_err("%s: of_overlay_apply() failed for tree@%s\n",
+-				__func__, tree->full_name);
++	if (err)
+ 		goto err_abort_trans;
+-	}
+ 
+ 	/* apply the changeset */
+ 	err = __of_changeset_apply(&ov->cset);
+-	if (err) {
+-		pr_err("%s: __of_changeset_apply() failed for tree@%s\n",
+-				__func__, tree->full_name);
++	if (err)
+ 		goto err_revert_overlay;
+-	}
++
+ 
+ 	/* add to the tail of the overlay list */
+ 	list_add_tail(&ov->node, &ov_list);
+@@ -469,8 +462,7 @@ static int overlay_removal_is_ok(struct
+ 
+ 	list_for_each_entry(ce, &ov->cset.entries, node) {
+ 		if (!overlay_is_topmost(ov, ce->np)) {
+-			pr_err("%s: overlay #%d is not topmost\n",
+-					__func__, ov->id);
++			pr_err("overlay #%d is not topmost\n", ov->id);
+ 			return 0;
+ 		}
+ 	}
+@@ -496,16 +488,13 @@ int of_overlay_destroy(int id)
+ 	ov = idr_find(&ov_idr, id);
+ 	if (ov == NULL) {
+ 		err = -ENODEV;
+-		pr_err("%s: Could not find overlay #%d\n",
+-				__func__, id);
++		pr_err("destroy: Could not find overlay #%d\n", id);
+ 		goto out;
+ 	}
+ 
+ 	/* check whether the overlay is safe to remove */
+ 	if (!overlay_removal_is_ok(ov)) {
+ 		err = -EBUSY;
+-		pr_err("%s: removal check failed for overlay #%d\n",
+-				__func__, id);
+ 		goto out;
+ 	}
+ 
+diff -Naurp source/drivers/of.orig/platform.c source/drivers/of/platform.c
+--- source/drivers/of.orig/platform.c	2016-11-18 14:22:48.958635561 +0300
++++ source/drivers/of/platform.c	2016-11-18 14:31:27.778855292 +0300
+@@ -11,6 +11,9 @@
+  *  2 of the License, or (at your option) any later version.
+  *
+  */
++
++#define pr_fmt(fmt)	"OF: " fmt
++
+ #include <linux/errno.h>
+ #include <linux/module.h>
+ #include <linux/amba/bus.h>
+@@ -26,12 +29,12 @@
+ const struct of_device_id of_default_bus_match_table[] = {
+ 	{ .compatible = "simple-bus", },
+ 	{ .compatible = "simple-mfd", },
++	{ .compatible = "isa", },
+ #ifdef CONFIG_ARM_AMBA
+ 	{ .compatible = "arm,amba-bus", },
+ #endif /* CONFIG_ARM_AMBA */
+ 	{} /* Empty terminated list */
+ };
+-EXPORT_SYMBOL(of_default_bus_match_table);
+ 
+ static int of_dev_node_match(struct device *dev, void *data)
+ {
+@@ -140,6 +143,7 @@ struct platform_device *of_device_alloc(
+ 	}
+ 
+ 	dev->dev.of_node = of_node_get(np);
++	dev->dev.fwnode = &np->fwnode;
+ 	dev->dev.parent = parent ? : &platform_bus;
+ 
+ 	if (bus_id)
+@@ -234,14 +238,12 @@ static struct amba_device *of_amba_devic
+ 		return NULL;
+ 
+ 	dev = amba_device_alloc(NULL, 0, 0);
+-	if (!dev) {
+-		pr_err("%s(): amba_device_alloc() failed for %s\n",
+-		       __func__, node->full_name);
++	if (!dev)
+ 		goto err_clear_flag;
+-	}
+ 
+ 	/* setup generic device info */
+ 	dev->dev.of_node = of_node_get(node);
++	dev->dev.fwnode = &node->fwnode;
+ 	dev->dev.parent = parent ? : &platform_bus;
+ 	dev->dev.platform_data = platform_data;
+ 	if (bus_id)
+@@ -261,15 +263,15 @@ static struct amba_device *of_amba_devic
+ 
+ 	ret = of_address_to_resource(node, 0, &dev->res);
+ 	if (ret) {
+-		pr_err("%s(): of_address_to_resource() failed (%d) for %s\n",
+-		       __func__, ret, node->full_name);
++		pr_err("amba: of_address_to_resource() failed (%d) for %s\n",
++		       ret, node->full_name);
+ 		goto err_free;
+ 	}
+ 
+ 	ret = amba_device_add(dev, &iomem_resource);
+ 	if (ret) {
+-		pr_err("%s(): amba_device_add() failed (%d) for %s\n",
+-		       __func__, ret, node->full_name);
++		pr_err("amba_device_add() failed (%d) for %s\n",
++		       ret, node->full_name);
+ 		goto err_free;
+ 	}
+ 
+@@ -363,6 +365,12 @@ static int of_platform_bus_create(struct
+ 		return 0;
+ 	}
+ 
++	if (of_node_check_flag(bus, OF_POPULATED_BUS)) {
++		pr_debug("%s() - skipping %s, already populated\n",
++			__func__, bus->full_name);
++		return 0;
++	}
++
+ 	auxdata = of_dev_lookup(lookup, bus);
+ 	if (auxdata) {
+ 		bus_id = auxdata->name;
+@@ -414,7 +422,7 @@ int of_platform_bus_probe(struct device_
+ 	if (!root)
+ 		return -EINVAL;
+ 
+-	pr_debug("of_platform_bus_probe()\n");
++	pr_debug("%s()\n", __func__);
+ 	pr_debug(" starting at: %s\n", root->full_name);
+ 
+ 	/* Do a self check of bus type, if there's a match, create children */
+@@ -466,6 +474,9 @@ int of_platform_populate(struct device_n
+ 	if (!root)
+ 		return -EINVAL;
+ 
++	pr_debug("%s()\n", __func__);
++	pr_debug(" starting at: %s\n", root->full_name);
++
+ 	for_each_child_of_node(root, child) {
+ 		rc = of_platform_bus_create(child, matches, lookup, parent, true);
+ 		if (rc) {
+@@ -489,6 +500,33 @@ int of_platform_default_populate(struct
+ }
+ EXPORT_SYMBOL_GPL(of_platform_default_populate);
+ 
++#ifndef CONFIG_PPC
++static int __init of_platform_default_populate_init(void)
++{
++	struct device_node *node;
++
++	if (!of_have_populated_dt())
++		return -ENODEV;
++
++	/*
++	 * Handle ramoops explicitly, since it is inside /reserved-memory,
++	 * which lacks a "compatible" property.
++	 */
++	node = of_find_node_by_path("/reserved-memory");
++	if (node) {
++		node = of_find_compatible_node(node, NULL, "ramoops");
++		if (node)
++			of_platform_device_create(node, NULL, NULL);
++	}
++
++	/* Populate everything else. */
++	of_platform_default_populate(NULL, NULL, NULL);
++
++	return 0;
++}
++arch_initcall_sync(of_platform_default_populate_init);
++#endif
++
+ static int of_platform_device_destroy(struct device *dev, void *data)
+ {
+ 	/* Do not touch devices not populated from the device tree */
+diff -Naurp source/drivers/of.orig/resolver.c source/drivers/of/resolver.c
+--- source/drivers/of.orig/resolver.c	2016-11-18 14:22:48.958635561 +0300
++++ source/drivers/of/resolver.c	2016-11-18 14:31:28.398845976 +0300
+@@ -9,6 +9,8 @@
+  * version 2 as published by the Free Software Foundation.
+  */
+ 
++#define pr_fmt(fmt)	"OF: resolver: " fmt
++
+ #include <linux/kernel.h>
+ #include <linux/module.h>
+ #include <linux/of.h>
+@@ -313,6 +315,11 @@ int of_resolve_phandles(struct device_no
+ 	phandle phandle, phandle_delta;
+ 	int err;
+ 
++	if (!resolve)
++		pr_err("%s: null node\n", __func__);
++	if (resolve && !of_node_check_flag(resolve, OF_DETACHED))
++		pr_err("%s: node %s not detached\n", __func__,
++			 resolve->full_name);
+ 	/* the resolve node must exist, and be detached */
+ 	if (!resolve || !of_node_check_flag(resolve, OF_DETACHED))
+ 		return -EINVAL;
+@@ -369,6 +376,7 @@ int of_resolve_phandles(struct device_no
+ 
+ 	/* we need to fixup, but no root symbols... */
+ 	if (!root_sym) {
++		pr_err("%s: no symbols in root of device tree.\n", __func__);
+ 		err = -EINVAL;
+ 		goto out;
+ 	}
+diff -Naurp source/drivers/of.orig/unittest.c source/drivers/of/unittest.c
+--- source/drivers/of.orig/unittest.c	2016-11-18 14:22:48.958635561 +0300
++++ source/drivers/of/unittest.c	2016-11-18 14:31:29.262832994 +0300
+@@ -771,7 +771,7 @@ static void __init of_unittest_platform_
+ 	};
+ 
+ 	np = of_find_node_by_path("/testcase-data");
+-	of_platform_populate(np, of_default_bus_match_table, NULL, NULL);
++	of_platform_default_populate(np, NULL, NULL);
+ 
+ 	/* Test that a missing irq domain returns -EPROBE_DEFER */
+ 	np = of_find_node_by_path("/testcase-data/testcase-device1");
+@@ -1871,8 +1871,7 @@ static void __init of_unittest_overlay(v
+ 		goto out;
+ 	}
+ 
+-	ret = of_platform_populate(bus_np, of_default_bus_match_table,
+-			NULL, NULL);
++	ret = of_platform_default_populate(bus_np, NULL, NULL);
+ 	if (ret != 0) {
+ 		unittest(0, "could not populate bus @ \"%s\"\n", bus_path);
+ 		goto out;
+diff -Naurp source/drivers/of.orig/unittest-data/.gitignore source/drivers/of/unittest-data/.gitignore
+--- source/drivers/of.orig/unittest-data/.gitignore	2016-11-18 14:22:48.958635561 +0300
++++ source/drivers/of/unittest-data/.gitignore	1970-01-01 03:00:00.000000000 +0300
+@@ -1,2 +0,0 @@
+-testcases.dtb
+-testcases.dtb.S
+--- source/drivers/of/configfs.c.orig	2016-11-18 14:57:31.226806282 +0300
++++ source/drivers/of/configfs.c	2016-11-18 15:16:40.453099357 +0300
+@@ -23,6 +23,7 @@
+ #include <linux/file.h>
+ #include <linux/vmalloc.h>
+ #include <linux/firmware.h>
++#include <linux/sizes.h>
+ 
+ #include "of_private.h"
+ 
+@@ -153,7 +154,7 @@ ssize_t cfs_overlay_item_dtbo_read(struc
+ {
+ 	struct cfs_overlay_item *overlay = to_cfs_overlay_item(item);
+ 
+-	pr_debug("%s: buf=%p max_count=%u\n", __func__,
++	pr_debug("%s: buf=%p max_count=%zu\n", __func__,
+ 			buf, max_count);
+ 
+ 	if (overlay->dtbo == NULL)
+@@ -274,6 +275,8 @@ static struct config_item_type of_cfs_ty
+ 	.ct_owner       = THIS_MODULE,
+ };
+ 
++struct config_group of_cfs_overlay_group;
++
+ static struct configfs_subsystem of_cfs_subsys = {
+ 	.su_group = {
+ 		.cg_item = {
+@@ -291,15 +294,16 @@ static int __init of_cfs_init(void)
+ 	pr_info("%s\n", __func__);
+ 
+ 	config_group_init(&of_cfs_subsys.su_group);
++	config_group_init_type_name(&of_cfs_overlay_group, "overlays",
++			&overlays_type);
++	configfs_add_default_group(&of_cfs_overlay_group,
++			&of_cfs_subsys.su_group);
++
+ 	ret = configfs_register_subsystem(&of_cfs_subsys);
+ 	if (ret != 0) {
+ 		pr_err("%s: failed to register subsys\n", __func__);
+ 		goto out;
+ 	}
+-	configfs_register_default_group(&of_cfs_subsys.su_group,
+-			"overlays",
+-			&overlays_type);
+-
+ 	pr_info("%s: OK\n", __func__);
+ out:
+ 	return ret;

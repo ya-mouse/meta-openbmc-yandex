@@ -1,0 +1,17 @@
+--- source/arch/arm/boot/dts/aspeed-bmc-opp-flash-layout.dtsi.orig	2016-11-19 07:50:47.000000000 +0300
++++ source/arch/arm/boot/dts/aspeed-bmc-opp-flash-layout.dtsi	2016-11-19 08:03:34.126604985 +0300
+@@ -7,9 +7,13 @@
+ 					label = "u-boot";
+ 				};
+ 				u-boot-env@60000 {
+-					reg = < 0x60000 0x20000 >;
++					reg = < 0x60000 0x10000 >;
+ 					label = "u-boot-env";
+ 				};
++				dtb@70000 {
++					reg = < 0x70000 0x10000 >;
++					label = "dtb";
++				};
+ 				kernel@80000 {
+ 					reg = < 0x80000 0x280000 >;
+ 					label = "kernel";

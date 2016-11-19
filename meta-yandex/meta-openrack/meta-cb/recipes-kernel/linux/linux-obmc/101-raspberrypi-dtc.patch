@@ -1,19 +1,19 @@
 diff -Naurp kernel-source.orig/scripts/dtc/checks.c kernel-source/scripts/dtc/checks.c
 --- kernel-source.orig/scripts/dtc/checks.c	2016-11-13 02:17:52.081522929 +0300
 +++ kernel-source/scripts/dtc/checks.c	2016-11-13 13:36:16.590337642 +0300
-@@ -506,6 +506,8 @@ static void fixup_path_references(struct
+@@ -482,6 +482,8 @@ static void fixup_phandle_references(struct
  				  struct node *node, struct property *prop)
  {
  	struct marker *m = prop->val.markers;
 +	struct fixup *f, **fp;
 +	struct fixup_entry *fe, **fep;
  	struct node *refnode;
- 	char *path;
+ 	cell_t phandle;
  
-@@ -514,11 +516,70 @@ static void fixup_path_references(struct
+@@ -490,11 +492,70 @@ static void fixup_phandle_references(struct
  
  		refnode = get_node_by_ref(dt, m->ref);
- 		if (!refnode) {
+ 		if (! refnode) {
 -			FAIL(c, "Reference to non-existent node or label \"%s\"\n",
 -			     m->ref);
 +			if (!dt->is_plugin) {
@@ -80,9 +80,9 @@ diff -Naurp kernel-source.orig/scripts/dtc/checks.c kernel-source/scripts/dtc/ch
 +			*fep = fe;
 +		}
 +
- 		path = refnode->fullpath;
- 		prop->val = data_insert_at_marker(prop->val, m, path,
- 						  strlen(path) + 1);
+ 		phandle = get_node_phandle(dt, refnode);
+ 		*((cell_t *)(prop->val.val + m->offset)) = cpu_to_fdt32(phandle);
+ 	}
 @@ -676,6 +737,45 @@ static void check_obsolete_chosen_interr
  }
  TREE_WARNING(obsolete_chosen_interrupt_controller, NULL);

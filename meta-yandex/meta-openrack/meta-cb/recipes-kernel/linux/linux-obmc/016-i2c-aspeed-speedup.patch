@@ -1,0 +1,11 @@
+--- source/drivers/i2c/busses/i2c-aspeed.c.orig	2016-11-18 19:17:41.000000000 +0300
++++ source/drivers/i2c/busses/i2c-aspeed.c	2016-11-18 19:17:49.682092658 +0300
+@@ -310,7 +310,7 @@ static void ast_i2c_dev_init(struct ast_
+ 			bus->bus_clk, clk_get_rate(bus->pclk));
+ 
+ 	/* Set AC Timing */
+-	if(bus->bus_clk / 1000 > 400) {
++	if(bus->bus_clk / 1000 > 1000) {
+ 		ast_i2c_write(bus, ast_i2c_read(bus, I2C_FUN_CTRL_REG) |
+ 				AST_I2CD_M_HIGH_SPEED_EN |
+ 				AST_I2CD_M_SDA_DRIVE_1T_EN |

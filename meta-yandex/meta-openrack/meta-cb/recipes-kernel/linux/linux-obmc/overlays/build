@@ -1,0 +1,15 @@
+#!/bin/sh -e
+
+[ -n "$BUILDDIR" ]
+
+dtc=$BUILDDIR/tmp/work/*-openbmc-linux-gnueabi/linux-obmc/4.*/linux-*-standard-build/scripts/dtc/dtc
+inc=$(readlink -f $BUILDDIR/tmp/work-shared/*/kernel-source/arch/arm/boot/dts)
+
+for dts in *.dts; do
+    dt=${dts%%.dts}
+    cpp -nostdinc -I$inc -I$inc/include -undef -D__DTS__ \
+	-x assembler-with-cpp -o $dts.tmp $dts
+    echo dtc -I dts -O dtb -o $dt.dtbo -b 0 -H epapr -@ $dts.tmp
+    $dtc -I dts -O dtb -o $dt.dtbo -b 0 -H epapr -@ $dts.tmp
+    rm -f $dts.tmp
+done
