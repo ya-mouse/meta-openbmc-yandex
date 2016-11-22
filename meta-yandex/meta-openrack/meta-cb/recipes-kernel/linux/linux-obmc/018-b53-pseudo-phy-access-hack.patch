@@ -1,0 +1,31 @@
+--- source/net/dsa/slave.c.orig	2016-11-21 06:43:18.000000000 +0300
++++ source/net/dsa/slave.c	2016-11-21 08:11:01.765338325 +0300
+@@ -27,7 +27,7 @@ static int dsa_slave_phy_read(struct mii
+ {
+ 	struct dsa_switch *ds = bus->priv;
+ 
+-	if (ds->phys_mii_mask & (1 << addr))
++	if (ds->phys_mii_mask & (1 << addr) || addr == 0x1e)
+ 		return ds->ops->phy_read(ds, addr, reg);
+ 
+ 	return 0xffff;
+@@ -37,7 +37,7 @@ static int dsa_slave_phy_write(struct mi
+ {
+ 	struct dsa_switch *ds = bus->priv;
+ 
+-	if (ds->phys_mii_mask & (1 << addr))
++	if (ds->phys_mii_mask & (1 << addr) || addr == 0x1e)
+ 		return ds->ops->phy_write(ds, addr, reg, val);
+ 
+ 	return 0;
+--- source/net/dsa/dsa2.c.orig	2016-11-21 08:12:32.000000000 +0300
++++ source/net/dsa/dsa2.c	2016-11-21 08:27:15.890491180 +0300
+@@ -545,7 +545,7 @@ static int dsa_parse_ports_dn(struct dev
+ 		 * to have access to a correct value, just like what
+ 		 * net/dsa/dsa.c::dsa_switch_setup_one does.
+ 		 */
+-		if (!dsa_port_is_cpu(port))
++//		if (!dsa_port_is_cpu(port))
+ 			ds->enabled_port_mask |= 1 << reg;
+ 	}
+ 
