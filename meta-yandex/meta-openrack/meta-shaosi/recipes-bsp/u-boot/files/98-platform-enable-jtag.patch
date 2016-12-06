@@ -1,0 +1,18 @@
+--- git/arch/arm/mach-aspeed/platform_g4.S.orig	2016-11-29 16:17:52.000000000 +0300
++++ git/arch/arm/mach-aspeed/platform_g4.S	2016-12-01 13:21:36.057200645 +0300
+@@ -2726,13 +2726,13 @@ ECC_Init_Flag:
+     and r1, r1, r2
+     orr r1, r1, #0x08
+     str r1, [r0]
+-
++#if 0
+     ldr r0, =0x1e6e2004
+     ldr r1, [r0]
+     ldr r2, =0xFFBFFFFF                          @ Enable JTAG Master, solve ARM stucked by JTAG issue
+     and r1, r1, r2
+     str r1, [r0]
+-
++#endif
+     ldr r0, =0x1e6e2048                          @ Set MAC interface delay timing
+     ldr r1, =0x2255
+     str r1, [r0]
