@@ -1,0 +1,124 @@
+/dts-v1/;
+
+#include "aspeed-g4.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/gpio/aspeed-gpio.h>
+
+/ {
+	model = "Gigabyte Shaosi (base) v3.0";
+	compatible = "openbmc,common", "aspeed,ast2400";
+
+	aliases {
+		serial4 = &uart5;
+	};
+
+	chosen {
+		stdout-path = &uart5;
+		bootargs = "console=ttyS4,115200 earlyprintk ramdisk_size=16384 panic=10 root=/dev/ram0 rw";
+	};
+
+	memory {
+		reg = < 0x40000000 0x10000000 >;
+	};
+
+	ahb: ahb {
+		fmc@1e620000 {
+			reg = < 0x1e620000 0x94
+				0x20000000 0x02000000 >;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "aspeed,ast2400-fmc";
+			flash@0 {
+				reg = < 0 >;
+				compatible = "jedec,spi-nor" ;
+				/* label = "bmc"; */
+				/*
+				 * Possibly required props:
+				 * spi-max-frequency = <>
+				 * spi-tx-bus-width = <>
+				 * spi-rx-bus-width  = <>
+				 * m25p,fast-read
+				 * spi-cpol if inverse clock polarity (CPOL)
+				 * spi-cpha if shifted clock phase (CPHA)
+				 */
+#include "aspeed-bmc-opp-flash-layout.dtsi"
+			};
+		};
+	};
+
+	leds: leds {
+		compatible = "gpio-leds";
+
+		heartbeat {
+			label = "heartbeat";
+			gpios = <&gpio ASPEED_GPIO(B, 6) GPIO_ACTIVE_LOW>;
+			linux,default-trigger = "heartbeat";
+		};
+	};
+};
+
+&mac0 {
+	status = "okay";
+
+	no-hw-checksum;
+
+	phy-handle = <&phy0>;
+	phy-mode = "rgmii";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_rgmii1_default &pinctrl_mdio1_default>;
+
+	mdio {
+		phy0: phy@0 {
+			compatible = "ethernet-phy-id001c.c915";
+			reg = <0>;
+		};
+	};
+};
+
+&uart5 {
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+};
+
+&i2c1 {
+	status = "okay";
+};
+
+&i2c2 {
+	status = "okay";
+};
+
+&i2c3 {
+	status = "okay";
+};
+
+&i2c4 {
+	status = "okay";
+};
+
+&i2c5 {
+	status = "okay";
+};
+
+&i2c6 {
+	status = "okay";
+	clock-frequency = <400000>;
+};
+
+&i2c7 {
+	status = "okay";
+	clock-frequency = <100000>;
+};
+
+&i2c8 {
+	status = "okay";
+};
+
+&pinctrl {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_extrst_default>;
+};
