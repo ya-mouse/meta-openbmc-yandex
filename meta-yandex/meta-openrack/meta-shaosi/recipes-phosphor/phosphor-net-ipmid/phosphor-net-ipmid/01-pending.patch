@@ -1,0 +1,4660 @@
+diff --git a/Makefile.am b/Makefile.am
+new file mode 100644
+index 0000000..cde0266
+--- /dev/null
++++ b/Makefile.am
+@@ -0,0 +1,15 @@
++sbin_PROGRAMS = \
++	netipmid
++
++netipmid_SOURCES = \
++	main.cpp \
++	socket_channel.cpp \
++	auth_algo.cpp \
++	session.cpp \
++	message_parsers.cpp \
++	sessions_manager.cpp \
++	command_table.cpp \
++	message_handler.cpp \
++	comm_module.cpp
++
++netipmid_LDFLAGS = $(SYSTEMD_LIBS)
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..a352eed
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,9 @@
++## To Build
++```
++To build this package, do the following steps:
++
++    1. ./bootstrap.sh
++    2. ./configure ${CONFIGURE_FLAGS}
++    3. make
++
++To full clean the repository again run `./bootstrap.sh clean`.
+diff --git a/bootstrap.sh b/bootstrap.sh
+new file mode 100755
+index 0000000..50b75b7
+--- /dev/null
++++ b/bootstrap.sh
+@@ -0,0 +1,18 @@
++#!/bin/sh
++
++AUTOCONF_FILES="Makefile.in aclocal.m4 ar-lib autom4te.cache compile \
++        config.guess config.h.in config.sub configure depcomp install-sh \
++        ltmain.sh missing *libtool test-driver"
++
++case $1 in
++    clean)
++        test -f Makefile && make maintainer-clean
++        for file in ${AUTOCONF_FILES}; do
++            find -name "$file" | xargs -r rm -rf
++        done
++        exit 0
++        ;;
++esac
++
++autoreconf -i
++echo 'Run "./configure ${CONFIGURE_FLAGS} && make"'
+diff --git a/cipher.hpp b/cipher.hpp
+new file mode 100644
+index 0000000..00f5e71
+--- /dev/null
++++ b/cipher.hpp
+@@ -0,0 +1,107 @@
++#pragma once
++
++#include <openssl/sha.h>
++
++#include <array>
++
++namespace cipher
++{
++struct Keys
++{
++    static constexpr size_t USER_KEY_MAX_LENGTH = 20;
++    static constexpr size_t BMC_RANDOM_NUMBER_LEN = 16;
++    static constexpr size_t REMOTE_CONSOLE_RANDOM_NUMBER_LEN = 16;
++    static constexpr size_t SESSION_INTEGRITY_KEY_LENGTH = SHA_DIGEST_LENGTH;
++
++    std::array<uint8_t, USER_KEY_MAX_LENGTH> userKey; // User Key
++    std::array<uint8_t, BMC_RANDOM_NUMBER_LEN>
++    bmcRandomNum; // Managed System Session ID
++    std::array<uint8_t, REMOTE_CONSOLE_RANDOM_NUMBER_LEN>
++    rcRandomNum; // Remote Console Random Number
++    std::array<uint8_t, SESSION_INTEGRITY_KEY_LENGTH>
++    sessionIntegrityKey; // Session Integrity Key
++};
++
++/** @class Base class for Cipher Implementation
++ *
++ *  @brief This is the base class for all cipher related implementations.
++ *         The cipher related operations are Session Authentication Algorithm,
++ *         Integrity Algorithm and Confidentiality Algorithm.
++ */
++class CipherAlgorithm
++{
++    public:
++
++        virtual ~CipherAlgorithm() = default;
++        CipherAlgorithm(const CipherAlgorithm&) = delete;
++        CipherAlgorithm& operator=(const CipherAlgorithm&) = delete;
++        CipherAlgorithm(CipherAlgorithm&&) = delete;
++        CipherAlgorithm& operator=(CipherAlgorithm&&) = delete;
++
++        /** @brief Set the state of the cipher implementation
++         *
++         *  @param[in] - enable/disable
++         *
++         */
++        auto setState(bool i_enable)
++        {
++            enabled = i_enable;
++            return enabled;
++        }
++
++        /** @brief Get the state of the cipher implementation
++         *
++         *  Returns the state of the implementation, whether it is enabled or enabled
++         *
++         */
++        auto getState()
++        {
++            return enabled;
++        }
++
++        /** @brief Cipher Algorithm that was requested by the client as part of the RMCP Session setup.
++         *
++         *  @param[in] - Algorithm index
++         *
++         */
++        auto setRequested(size_t i_algoIndex)
++        {
++            requested = i_algoIndex;
++            return requested;
++        }
++
++        /** @brief Get the Cipher Algorithm that was requested by the client
++         *
++         */
++        auto getRequested()
++        {
++            return requested;
++        }
++
++        /** @brief Cipher Algorithm that was applied after the negotiation at RMCP Session setup.
++         *
++         *  @param[in] - Algorithm index
++         */
++        auto setApplied(size_t i_algoIndex)
++        {
++            applied = i_algoIndex;
++            return applied;
++        }
++
++        /** @brief Get the Cipher Algorithm that was applied
++         *
++         */
++        auto getApplied()
++        {
++            return applied;
++        }
++
++    protected:
++        CipherAlgorithm() = default;
++
++        bool enabled;
++        size_t requested;
++        size_t applied;
++};
++
++} // name cipher
+diff --git a/comm_module.cpp b/comm_module.cpp
+new file mode 100644
+index 0000000..307cd03
+--- /dev/null
++++ b/comm_module.cpp
+@@ -0,0 +1,568 @@
++#include "comm_module.hpp"
++
++#include <host-ipmid/ipmid-api.h>
++#include <openssl/hmac.h>
++#include <openssl/rand.h>
++#include <stdio.h>
++#include <systemd/sd-bus.h>
++
++#include <algorithm>
++#include <cstring>
++#include <iomanip>
++#include <iostream>
++
++#include "command_table.hpp"
++#include "endian.hpp"
++#include "main.hpp"
++#include "sessions_manager.hpp"
++#include "session.hpp"
++
++constexpr size_t BMC_GUID_LEN = 16;
++
++void sessionSetupCommands()
++{
++    command::CmdDetails commands[] =
++    {
++        {
++            {
++                (static_cast<uint32_t>
++                (message::PayloadType::OPEN_SESSION_REQUEST) << 16)
++            },
++            &openSession, session::Privilege::PRIVILEGE_HIGHEST_MATCHING,  true
++        },
++        {
++            {(static_cast<uint32_t>(message::PayloadType::RAKP1) << 16)},
++            &RAKP12, session::Privilege::PRIVILEGE_HIGHEST_MATCHING, true
++        },
++        {
++            {(static_cast<uint32_t>(message::PayloadType::RAKP3) << 16)},
++            &RAKP34, session::Privilege::PRIVILEGE_HIGHEST_MATCHING, true
++        },
++        {
++            {
++                (static_cast<uint32_t>(message::PayloadType::IPMI) << 16) |
++                static_cast<uint16_t>(command::NetFns::APP) | 0x38
++            },
++            &GetChannelCapabilities,
++            session::Privilege::PRIVILEGE_HIGHEST_MATCHING, true
++        },
++        {
++            {
++                (static_cast<uint32_t>(message::PayloadType::IPMI) << 16) |
++                static_cast<uint16_t>(command::NetFns::APP) | 0x3B
++            },
++            &setSessionPrivilegeLevel, session::Privilege::PRIVILEGE_USER, false
++        },
++        {
++            {
++                (static_cast<uint32_t>(message::PayloadType::IPMI) << 16) |
++                static_cast<uint16_t>(command::NetFns::APP) | 0x3C
++            },
++            &closeSession, session::Privilege::PRIVILEGE_CALLBACK, false
++        },
++    };
++
++    auto count = sizeof(commands) / sizeof(command::CmdDetails);
++
++    for (size_t iter = 0; iter < count ; ++iter)
++    {
++        std::get<command::Table&>(singletonPool).registerCommand(
++            commands[iter].command.command,
++            std::make_unique<command::NetIpmidEntry>
++            (commands[iter].command, commands[iter].functor,
++             commands[iter].privilege, commands[iter].sessionless));
++    }
++}
++
++std::vector<uint8_t> GetChannelCapabilities(std::vector<uint8_t>& inPayload,
++        message::Handler& handler)
++{
++    std::cout << ">> GetChannelCapabilities\n";
++
++    std::vector<uint8_t> outPayload(sizeof(GetChannelCapabilitiesResp_t));
++    auto response = reinterpret_cast<GetChannelCapabilitiesResp_t*>
++                    (outPayload.data());
++
++    // A canned response, since there is no user and channel management.
++    response->completionCode = IPMI_CC_OK ;
++
++    // Channel Number 1 is arbitarily applied to primary LAN channel;
++    response->channelNumber = 1;
++
++    response->ipmiVersion = 1 ;     //IPMI v2.0 extended capabilities available.
++    response->reserved1 = 0;
++    response->oem = 0;
++    response->straightKey = 0;
++    response->reserved2 = 0;
++    response->md5 = 0;
++    response->md2 = 0;
++
++
++    response->reserved3 = 0;
++    response->KGStatus = 0;         //KG is set to default
++    response->perMessageAuth = 0;   //Per-message Authentication is enabled
++    response->userAuth = 0;         //User Level Authentication is enabled
++    response->nonNullUsers = 1;     //Non-null usernames enabled
++    response->nullUsers = 1;        //Null usernames enabled
++    response->anonymousLogin = 0;   //Anonymous Login disabled
++
++    response->reserved4 = 0;
++    response->extCapabilities = 0x2;    //Channel supports IPMI v2.0 connections
++
++    response->oemID[0] = 0;
++    response->oemID[1] = 0;
++    response->oemID[2] = 0;
++    response->oemAuxillary = 0;
++
++    std::cout << "<< GetChannelCapabilities\n";
++    return outPayload;
++}
++
++std::vector<uint8_t> openSession(std::vector<uint8_t>& inPayload,
++                                 message::Handler& handler)
++{
++    std::cout << ">> openSession\n";
++
++    std::vector<uint8_t> outPayload(sizeof(OpenSessionResponse_t));
++    auto request = reinterpret_cast<OpenSessionRequest_t*>(inPayload.data());
++    auto response = reinterpret_cast<OpenSessionResponse_t*>(outPayload.data());
++
++    // Start an IPMI session
++    session::Session* session = std::get<session::Manager&>
++                                (singletonPool).startSession(
++                                    request->remoteConsoleSessionID,
++                                    static_cast<session::Privilege>
++                                    (request->maxPrivLevel),
++                                    request->authAlgo,
++                                    request->intAlgo,
++                                    request->confAlgo);
++
++    response->messageTag = request->messageTag;
++
++    if (session)
++    {
++        response->status_code = static_cast<uint8_t>(RAKP_ReturnCode::NO_ERROR);
++        response->maxPrivLevel = static_cast<uint8_t>(session->curPrivLevel);
++        response->remoteConsoleSessionID = request->remoteConsoleSessionID;
++        response->managedSystemSessionID = endian::to_ipmi<uint32_t>
++                                           (session->getBMCSessionID());
++
++        response->authPayload = request->authPayload ;
++        response->authPayloadLen = request->authPayloadLen ;
++        response->authAlgo = request->authAlgo;
++
++        response->intPayload = request->intPayload ;
++        response->intPayloadLen = request->intPayloadLen ;
++        response->intAlgo = request->intAlgo;
++
++        response->confPayload = request->confPayload ;
++        response->confPayloadLen = request->confPayloadLen ;
++        response->confAlgo = request->confAlgo;
++
++        session->updateLastTransactionTime();
++
++        // Session state is Setup in progress
++        session->state = session::State::SETUP_IN_PROGRESS;
++
++    }
++    else
++    {
++        response->status_code = static_cast<uint8_t>
++                                (RAKP_ReturnCode::INSUFFICIENT_RESOURCE);
++        std::cerr <<"openSession : Problem opening a session\n";
++    }
++
++    std::cout << "<< openSession\n";
++    return outPayload;
++}
++
++std::vector<uint8_t> RAKP12(std::vector<uint8_t>& inPayload,
++                            message::Handler& handler)
++{
++    std::cout << ">> RAKP12\n";
++
++    auto request = reinterpret_cast<RAKP1request_t*>(inPayload.data());
++    std::vector<uint8_t> outPayload;
++
++    auto session = std::get<session::Manager&>(singletonPool).getSession(
++                       request->managedSystemSessionID);
++
++    std::cout << "RAKP12: BMC Session ID: " << std::hex << std::setfill('0') <<
++              std::setw(8) << std::uppercase << endian::from_ipmi<uint32_t>
++              (request->managedSystemSessionID) << "\n";
++
++    // Stop command execution if Session is not found or Session ID is zero
++    // which is reserved
++    if (session == nullptr ||
++        request->managedSystemSessionID == session::SESSION_ZERO)
++    {
++        std::cerr << "RAKP12: BMC invalid Session ID\n";
++        return outPayload;
++    }
++
++    // Update transaction time
++    session->updateLastTransactionTime();
++
++    auto rcSessionID = endian::to_ipmi<uint32_t>(session->getRCSessionID());
++    auto bmcSessionID = endian::to_ipmi<uint32_t>(session->getBMCSessionID());
++
++    fprintf(stderr, "\nRAKP12 0x%X\n", rcSessionID);
++    fprintf(stderr, "\nRAKP12 0x%X\n", bmcSessionID);
++
++    auto authAlgo = session->getAuthAlgo();
++
++    /*
++     * Generate Key Authentication Code - RAKP 2
++     *
++     * 1) Remote Console Session ID - 4 bytes
++     * 2) Managed System Session ID - 4 bytes
++     * 3) Remote Console Random Number - 16 bytes
++     * 4) Managed System Random Number - 16 bytes
++     * 5) Managed System GUID - 16 bytes
++     * 6) Requested Privilege Level - 1 byte
++     * 7) User Name Length Byte - 1 byte (0 for 'null' username)
++     * 8) User Name - variable (absent for 'null' username)
++     */
++
++    std::vector<uint8_t> input;
++    input.resize(sizeof(rcSessionID) + sizeof(bmcSessionID) +
++                 cipher::rakp_auth::REMOTE_CONSOLE_RANDOM_NUMBER_LEN +
++                 cipher::rakp_auth::BMC_RANDOM_NUMBER_LEN +
++                 BMC_GUID_LEN + sizeof(request->req_max_privilege_level) +
++                 sizeof(request->user_name_len));
++
++    // Remote Console Session ID
++    std::copy_n((uint8_t*)(&rcSessionID), sizeof(rcSessionID), input.data());
++    auto inSize = sizeof(rcSessionID);
++
++    // Managed System Session ID
++    std::copy_n((uint8_t*)(&bmcSessionID), sizeof(bmcSessionID),
++                input.data() + inSize);
++    inSize += sizeof(bmcSessionID);
++
++    // Copy the Remote Console Random Number from the RAKP1 request to the
++    // Authentication Algorithm
++    std::copy_n((uint8_t*)request->remote_console_random_number,
++                cipher::rakp_auth::REMOTE_CONSOLE_RANDOM_NUMBER_LEN,
++                authAlgo->rcRandomNum.begin());
++
++    std::copy(authAlgo->rcRandomNum.begin(), authAlgo->rcRandomNum.end(),
++              input.data() + inSize);
++    inSize += cipher::rakp_auth::REMOTE_CONSOLE_RANDOM_NUMBER_LEN;
++
++    // Generate the Managed System Random Number
++    RAND_bytes(input.data() + inSize, cipher::rakp_auth::BMC_RANDOM_NUMBER_LEN);
++
++    // Copy the Managed System Random Number to the Authentication Algorithm
++    std::copy_n(input.data() + inSize, cipher::rakp_auth::BMC_RANDOM_NUMBER_LEN,
++                authAlgo->bmcRandomNum.begin());
++    inSize += cipher::rakp_auth::BMC_RANDOM_NUMBER_LEN;
++
++    // Managed System GUID
++    getSystemGUID(input.data() + inSize, BMC_GUID_LEN);
++    inSize += BMC_GUID_LEN;
++
++    // Requested Privilege Level
++    session->curPrivLevel = static_cast<session::Privilege>
++                            (request->req_max_privilege_level);
++    std::copy_n(&(request->req_max_privilege_level),
++                sizeof(request->req_max_privilege_level), input.data() +
++                inSize);
++    inSize += sizeof(request->req_max_privilege_level);
++
++    // Set Max Privilege to ADMIN
++    session->maxPrivLevel = session::Privilege::PRIVILEGE_ADMIN;
++
++    // User Name Length Byte
++    std::copy_n(&(request->user_name_len), sizeof(request->user_name_len),
++                input.data() + inSize);
++
++    // Generate Key Exchange Authentication Code - RAKP2
++    auto output = authAlgo->generateHMAC(input);
++
++    outPayload.resize(sizeof(RAKP2response_t));
++    auto response = reinterpret_cast<RAKP2response_t*>(outPayload.data());
++
++    response->messageTag = request->messageTag;
++    response->rmcpStatusCode = 0;
++    response->reserved = 0;
++    response->remoteConsoleSessionID = rcSessionID ;
++
++    // Copy Managed System Random Number to the Response
++    std::copy(authAlgo->bmcRandomNum.begin(), authAlgo->bmcRandomNum.end(),
++              response->managed_system_random_number);
++
++    // Copy System GUID to the Response
++    getSystemGUID(response->managed_system_guid,
++                  sizeof(response->managed_system_guid));
++
++    // Insert the HMAC output into the payload
++    outPayload.insert(outPayload.end(), output.begin(), output.end());
++
++    std::cout << "<< RAKP12\n";
++    return outPayload;
++}
++
++std::vector<uint8_t> RAKP34(std::vector<uint8_t>& inPayload,
++                            message::Handler& handler)
++{
++    std::cout << ">> RAKP34\n";
++
++    std::vector<uint8_t> outPayload;
++    outPayload.resize(sizeof(RAKP4response_t));
++    auto request = reinterpret_cast<RAKP3request_t*>(inPayload.data());
++    auto response = reinterpret_cast<RAKP4response_t*>(outPayload.data());
++
++    auto session = std::get<session::Manager&>(singletonPool).getSession(le32toh
++                   (request->managedSystemSessionID));
++
++    // Session ID is zero is reserved for session setup, don't proceed
++    // or if the session requested is not found
++    if (session == nullptr ||
++        request->managedSystemSessionID == session::SESSION_ZERO)
++    {
++        return outPayload;
++    }
++    session->updateLastTransactionTime();
++
++    auto authAlgo = session->getAuthAlgo();
++    /*
++     * Key Authentication Code - RAKP 3
++     *
++     * 1) Managed System Random Number - 16 bytes
++     * 2) Remote Console Session ID - 4 bytes
++     * 3) Session Privilege Level - 1 byte
++     * 4) User Name Length Byte - 1 byte (0 for 'null' username)
++     * 5) User Name - variable (absent for 'null' username)
++     */
++
++    // Remote Console Session ID
++    auto rcSessionID = endian::to_ipmi<uint32_t>(session->getRCSessionID());
++
++    // Session Privilege Level
++    auto sessPrivLevel = static_cast<uint8_t>(session->curPrivLevel);
++
++    // User Name Length Byte
++    uint8_t userLength = 0;
++
++    std::vector<uint8_t> input;
++    input.resize(cipher::rakp_auth::BMC_RANDOM_NUMBER_LEN +
++                 sizeof(rcSessionID) + sizeof(sessPrivLevel) +
++                 sizeof(userLength));
++
++    // Managed System Random Number
++    std::copy(authAlgo->bmcRandomNum.begin(), authAlgo->bmcRandomNum.end(),
++              input.data());
++    auto inSize = cipher::rakp_auth::BMC_RANDOM_NUMBER_LEN;
++
++    // Remote Console Session ID
++    std::copy_n((uint8_t*)(&rcSessionID), sizeof(rcSessionID),
++                input.data() + inSize);
++    inSize += sizeof(rcSessionID);
++
++    // Session Privilege Level
++    std::copy_n((uint8_t*)(&sessPrivLevel), sizeof(sessPrivLevel),
++                input.data() + inSize);
++    inSize += sizeof(sessPrivLevel);
++
++    // User Name Length Byte
++    std::copy_n(&userLength, sizeof(userLength), input.data() + inSize);
++
++    // Generate Key Exchange Authentication Code - RAKP2
++    auto output = authAlgo->generateHMAC(input);
++
++    if (std::memcmp(output.data(), request->keyExchangeAuthCode,
++                    output.size()))
++    {
++        std::cerr << "mismatch in HMAC sent by remote console\n";
++
++        response->messageTag = request->messageTag;
++        response->rmcpStatusCode = 0x0F;
++        response->reserved = 0;
++        response->remoteConsoleSessionID = rcSessionID;
++
++        //close the session
++        std::get<session::Manager&>(singletonPool).stopSession(
++            session->getBMCSessionID());
++
++        return outPayload;
++    }
++
++    /*
++     * Session Integrity Key
++     *
++     * 1) Remote Console Random Number - 16 bytes
++     * 2) Managed System Random Number - 16 bytes
++     * 3) Session Privilege Level - 1 byte
++     * 4) User Name Length Byte - 1 byte (0 for 'null' username)
++     * 5) User Name - variable (absent for 'null' username)
++     */
++
++    input.resize(0);
++    inSize = 0;
++
++    input.resize(cipher::rakp_auth::REMOTE_CONSOLE_RANDOM_NUMBER_LEN +
++                 cipher::rakp_auth::BMC_RANDOM_NUMBER_LEN +
++                 sizeof(sessPrivLevel) + sizeof(userLength));
++
++    // Remote Console Random Number
++    std::copy(authAlgo->rcRandomNum.begin(), authAlgo->rcRandomNum.end(),
++              input.data());
++    inSize += cipher::rakp_auth::REMOTE_CONSOLE_RANDOM_NUMBER_LEN;
++
++    // Managed Console Random Number
++    std::copy(authAlgo->bmcRandomNum.begin(), authAlgo->bmcRandomNum.end(),
++              input.data() + inSize);
++    inSize += cipher::rakp_auth::BMC_RANDOM_NUMBER_LEN;
++
++    // Session Privilege Level
++    std::copy_n((uint8_t*)(&sessPrivLevel), sizeof(sessPrivLevel),
++                input.data() + inSize);
++    inSize += sizeof(sessPrivLevel);
++
++    // User Name Length Byte
++    std::copy_n(&userLength, sizeof(userLength), input.data() + inSize);
++
++    // Generate Session Integrity Key
++    auto sikOutput = authAlgo->generateHMAC(input);
++
++    // Update the SIK in the Authentication Algo Interface
++    authAlgo->sessionIntegrityKey.insert(authAlgo->sessionIntegrityKey.begin(),
++                                         sikOutput.begin(), sikOutput.end());
++
++    /*
++     * Integrity Check Value
++     *
++     * 1) Remote Console Random Number - 16 bytes
++     * 2) Managed System Session ID - 4 bytes
++     * 3) Managed System GUID - 16 bytes
++     */
++
++    // Get Managed System Session ID
++    auto bmcSessionID = endian::to_ipmi<uint32_t>(session->getBMCSessionID());
++
++    input.resize(0);
++    inSize = 0;
++
++    input.resize(cipher::rakp_auth::REMOTE_CONSOLE_RANDOM_NUMBER_LEN +
++                 sizeof(bmcSessionID) + BMC_GUID_LEN);
++
++    // Remote Console Random Number
++    std::copy(authAlgo->rcRandomNum.begin(), authAlgo->rcRandomNum.end(),
++              input.data());
++    inSize += cipher::rakp_auth::REMOTE_CONSOLE_RANDOM_NUMBER_LEN;
++
++    // Managed System Session ID
++    std::copy_n((uint8_t*)(&bmcSessionID), sizeof(bmcSessionID),
++                input.data() + inSize);
++    inSize += sizeof(bmcSessionID);
++
++    // Managed System GUID
++    getSystemGUID(input.data() + inSize, BMC_GUID_LEN);
++
++    // Integrity Check Value
++    auto icv = authAlgo->generateICV(input);
++
++
++    outPayload.resize(sizeof(RAKP4response_t));
++
++    response->messageTag = request->messageTag;
++    response->rmcpStatusCode = 0;
++    response->reserved = 0;
++    response->remoteConsoleSessionID = rcSessionID;
++
++    // Insert the HMAC output into the payload
++    outPayload.insert(outPayload.end(), icv.begin(), icv.end());
++
++
++    session->state = session::State::ACTIVE;
++
++    std::cout << "<< RAKP34\n";
++    return outPayload;
++}
++std::vector<uint8_t> setSessionPrivilegeLevel(std::vector<uint8_t>& inPayload,
++        message::Handler& handler)
++{
++    std::cout << ">> setSessionPrivilegeLevel\n";
++
++    std::vector<uint8_t> outPayload(sizeof(SetSessionPrivilegeLevel_t));
++    auto response = reinterpret_cast<SetSessionPrivilegeLevel_t*>
++                    (outPayload.data());
++    response->completionCode = IPMI_CC_OK;
++    uint8_t reqPrivilegeLevel = *((uint8_t*)inPayload.data());
++
++    auto session = std::get<session::Manager&>(singletonPool).getSession(
++                       handler.getSessionID());
++
++    if (reqPrivilegeLevel == 0) // Just return present privilege level
++    {
++        response->newPrivLevel = static_cast<uint8_t>(session->curPrivLevel);
++    }
++    else if (reqPrivilegeLevel <= static_cast<uint8_t>(session->maxPrivLevel))
++    {
++        session->curPrivLevel = static_cast<session::Privilege>
++                                (reqPrivilegeLevel);
++        response->newPrivLevel = reqPrivilegeLevel;
++    }
++    else
++    {
++        // Requested level exceeds Channel and/or User Privilege Limit
++        response->completionCode = IPMI_CC_EXCEEDS_USER_PRIV;
++    }
++
++    std::cout << "<< setSessionPrivilegeLevel\n";
++    return outPayload;
++}
++
++std::vector<uint8_t> closeSession(std::vector<uint8_t>& inPayload,
++                                  message::Handler& handler)
++{
++    std::cout << ">> closeSession\n";
++
++    std::vector<uint8_t> outPayload(sizeof(CloseSessionResponse));
++    auto request = reinterpret_cast<CloseSessionRequest*>(inPayload.data());
++    auto response = reinterpret_cast<CloseSessionResponse*>(outPayload.data());
++    response->completionCode = IPMI_CC_OK ;
++
++    auto bmcSessionID = endian::from_ipmi<uint32_t>(request->sessionID);
++
++    // Session 0 is the not closed
++    if (bmcSessionID == session::SESSION_ZERO)
++    {
++        response->completionCode = IPMI_CC_INVALID_SESSIONID;
++    }
++    else
++    {
++        auto session = std::get<session::Manager&>(singletonPool).getSession(
++                           bmcSessionID);
++
++        // Valid Session ID
++        if (nullptr != session)
++        {
++            std::get<session::Manager&>(singletonPool).stopSession(
++                session->getBMCSessionID());
++        }
++        else
++        {
++            response->completionCode = IPMI_CC_INVALID_SESSIONID;
++        }
++    }
++
++    std::cout << "<< closeSession\n";
++    return outPayload;
++}
++
++void getSystemGUID(uint8_t* i_buffer, uint32_t io_numBytes)
++{
++    uint8_t l_managedSystemGUID[BMC_GUID_LEN] = { 0x53, 0x61, 0x6E, 0x74,
++                                                  0x6F, 0x73, 0x68, 0x20,
++                                                  0x44, 0x65, 0x76, 0x61,
++                                                  0x6C, 0x65, 0x20, 0x00
++                                                };
++
++    uint32_t l_len = (io_numBytes > sizeof(l_managedSystemGUID)) ?
++                     sizeof(l_managedSystemGUID)
++                     : io_numBytes;
++    memcpy(i_buffer, l_managedSystemGUID, l_len);
++}
++
+diff --git a/comm_module.hpp b/comm_module.hpp
+new file mode 100644
+index 0000000..43f7d16
+--- /dev/null
++++ b/comm_module.hpp
+@@ -0,0 +1,302 @@
++#pragma once
++
++#include <vector>
++
++#include "message_handler.hpp"
++
++enum class RAKP_ReturnCode : uint8_t
++{
++    NO_ERROR = 0x00,
++    INSUFFICIENT_RESOURCE,
++    INVALID_SESSION_ID,
++    INVLALID_PAYLOAD_TYPE,
++    INVALID_AUTH_ALGO,
++    INVALID_INTEGRITY_ALGO,
++    NO_MATCH_AUTH_PAYLOAD,
++    NO_MATCH_INTEGRITY_PAYLOAD,
++    INACTIVE_SESSIONID,
++    INACTIVE_ROLE,
++    UNAUTH_ROLE_PRIV,
++    INSUFFICIENT_RESOURCES_ROLE,
++    INVALID_NAME_LENGTH,
++    UNAUTH_NAME,
++    UNAUTH_GUID,
++    INVALID_INTEGRITY_CHECK_VALUE,
++    INVALID_CONF_ALGO,
++    NO_CIPHER_SUITE_MATCH,
++    ILLEGAL_PARAMETER,
++};
++
++struct GetChannelCapabilitiesReq_t
++{
++    uint8_t channelNumber;
++    uint8_t reqMaxPrivLevel;
++};
++
++struct GetChannelCapabilitiesResp_t
++{
++    uint8_t completionCode;     // Completion Code
++
++    uint8_t channelNumber;      // Channel number that the request was
++                                // received on
++
++    uint8_t none : 1;
++    uint8_t md2 : 1;
++    uint8_t md5 : 1;
++    uint8_t reserved2 : 1;
++    uint8_t straightKey : 1;   // Straight password/key support
++    // Support OEM identified by the IANA OEM ID in RMCP+ ping response
++    uint8_t oem : 1;
++    uint8_t reserved1 : 1;
++uint8_t ipmiVersion :
++    1;    // 0b = IPMIV1.5 support only, 1B = IPMI V2.0 support
++
++    // Two key login status . only for IPMI V2.0 RMCP+ RAKP
++    uint8_t KGStatus : 1;
++    uint8_t perMessageAuth : 1; // Per-message authentication support
++    uint8_t userAuth : 1;       // User - level authentication status
++    // Anonymous login status for non_null usernames enabled/disabled
++    uint8_t nonNullUsers : 1;
++    // Anonymous login status for null user names enabled/disabled
++    uint8_t nullUsers : 1;
++    // Anonymous login status for anonymous login enabled/disabled
++    uint8_t anonymousLogin : 1;
++
++    uint8_t reserved3 : 2;
++    // Extended capabilities will be present only if IPMI version is V2.0
++    uint8_t extCapabilities : 2; // Channel support for IPMI V2.0 connections
++    uint8_t reserved4 : 6;
++
++    // Below 4 bytes will all the 0's if no OEM authentication type available.
++    uint8_t oemID[3];  // IANA enterprise number for OEM/organization
++    uint8_t oemAuxillary;  // Addition OEM specific information..
++} __attribute__((packed));
++
++/*
++ * @brief Get Channel Authentication Capabilities
++ *
++ * This message exchange provides a way for a remote console to discover what
++ * IPMI version is supported i.e. whether or not the BMC supports the IPMI
++ * v2.0 / RMCP+ packet format. It also provides information that the remote
++ * console can use to determine whether anonymous, “one-key”, or “two-key”
++ * logins are used.This information can guide a remote console in how it
++ * presents queries to users for username and password information. This is a
++ * ‘session-less’ command that the BMC accepts in both IPMI v1.5 and v2.0/RMCP+
++ * packet formats.
++ */
++std::vector<uint8_t> GetChannelCapabilities(std::vector<uint8_t>& inPayload,
++        message::Handler& handler);
++
++struct OpenSessionRequest_t
++{
++    uint8_t messageTag;  // Message tag from request buffer
++    uint8_t maxPrivLevel : 4 ;// Requested maximum privilege level
++    uint8_t reserved1 : 4;  // Reserved for future definition
++    uint16_t reserved2;
++    uint32_t remoteConsoleSessionID ;
++
++    uint8_t authPayload ;
++    uint16_t  reserved3;
++    uint8_t  authPayloadLen;
++    uint8_t authAlgo : 6;
++    uint8_t reserved4 : 2;
++    uint8_t reserved5;
++    uint16_t reserved6;
++
++    uint8_t intPayload;
++    uint16_t reserved7;
++    uint8_t  intPayloadLen;
++    uint8_t intAlgo : 6;
++    uint8_t reserved8 : 2;
++    uint8_t reserved9;
++    uint16_t reserved10;
++
++    uint8_t confPayload;
++    uint16_t reserved11;
++    uint8_t  confPayloadLen;
++    uint8_t confAlgo : 6;
++    uint8_t reserved12 : 2;
++    uint8_t reserved13;
++    uint16_t reserved14;
++} __attribute__((packed));
++
++struct OpenSessionResponse_t
++{
++    uint8_t messageTag;
++    uint8_t status_code;
++    uint8_t maxPrivLevel : 4;
++    uint8_t reserved1 : 4;
++    uint8_t reserved2;
++    uint32_t remoteConsoleSessionID;
++    uint32_t managedSystemSessionID;
++
++    uint8_t authPayload;
++    uint16_t reserved3;
++    uint8_t authPayloadLen;
++    uint8_t authAlgo : 6;
++    uint8_t reserved4 : 2;
++    uint8_t reserved5;
++    uint16_t reserved6;
++
++    uint8_t intPayload;
++    uint16_t reserved7;
++    uint8_t  intPayloadLen;
++    uint8_t intAlgo : 6;
++    uint8_t reserved8 : 2;
++    uint8_t reserved9;
++    uint16_t reserved10;
++
++    uint8_t confPayload;
++    uint16_t reserved11;
++    uint8_t  confPayloadLen;
++    uint8_t confAlgo : 6;
++    uint8_t reserved12 : 2;
++    uint8_t reserved13;
++    uint16_t reserved14;
++} __attribute__((packed));
++
++/*
++ * @brief RMCP+ Open Session Request, RMCP+ Open Session Response
++ *
++ * The RMCP+ Open Session request and response messages are used to enable a
++ * remote console to discover what Cipher Suite(s) can be used for establishing
++ * a session at a requested maximum privilege level. These messages are also
++ * used for transferring the sessions IDs that the remote console and BMC wish
++ *  to for the session once it’s been activated, and to track each party during
++ *  the exchange of messages used for establishing the session.
++ */
++std::vector<uint8_t> openSession(std::vector<uint8_t>& inPayload,
++                                 message::Handler& handler);
++
++struct RAKP1request_t
++{
++    uint8_t messageTag;
++    uint8_t reserved1;
++    uint16_t reserved2;
++    uint32_t managedSystemSessionID;
++    uint8_t remote_console_random_number[16];
++    uint8_t req_max_privilege_level;
++    uint16_t reserved3;
++    uint8_t user_name_len;
++    char user_name[16];
++} __attribute__((packed));
++
++struct RAKP2response_t
++{
++    uint8_t messageTag;
++    uint8_t rmcpStatusCode;
++    uint16_t reserved;
++    uint32_t remoteConsoleSessionID;
++    uint8_t managed_system_random_number[16];
++    uint8_t managed_system_guid[16];
++} __attribute__((packed));
++
++/*
++ * @brief RAKP Message 1, RAKP Message 2
++ *
++ * These messages are used to exchange random number and identification
++ * information between the BMC and the remote console that are, in effect,
++ * mutual challenges for a challenge/response. (Unlike IPMI v1.5, the v2.0/RMCP+
++ * challenge/response is symmetric. I.e. the remote console and BMC both issues
++ * challenges,and both need to provide valid responses for the session to be
++ * activated.)
++ *
++ * The remote console request (RAKP Message 1) passes a random number and
++ * username/privilege information that the BMC will later use to ‘sign’ a
++ * response message based on key information associated with the user and the
++ * Authentication Algorithm negotiated in the Open Session Request/Response
++ * exchange. The BMC responds with RAKP Message 2 and passes a random number and
++ * GUID (globally unique ID) for the managed system that the remote console
++ * uses according the Authentication Algorithm to sign a response back to the
++ * BMC.
++ */
++std::vector<uint8_t> RAKP12(std::vector<uint8_t>& inPayload,
++                            message::Handler& handler);
++
++struct RAKP3request_t
++{
++    uint8_t messageTag;
++    uint8_t rmcpStatusCode;
++    uint16_t reserved;
++    uint32_t managedSystemSessionID;
++    uint8_t keyExchangeAuthCode[20];
++} __attribute__((packed));
++struct RAKP4response_t
++{
++    uint8_t messageTag;
++    uint8_t rmcpStatusCode;
++    uint16_t reserved;
++    uint32_t remoteConsoleSessionID;
++} __attribute__((packed));
++
++/*
++ * @brief RAKP Message 3, RAKP Message 4
++ *
++ * The session activation process is completed by the remote console and BMC
++ * exchanging messages that are signed according to the Authentication Algorithm
++ * that was negotiated, and the parameters that were passed in the earlier
++ * messages. RAKP Message 3 is the signed message from the remote console to the
++ * BMC. After receiving RAKP Message 3, the BMC returns RAKP Message 4 - a
++ * signed message from BMC to the remote console.
++ */
++std::vector<uint8_t> RAKP34(std::vector<uint8_t>& inPayload,
++                            message::Handler& handler);
++
++constexpr uint8_t IPMI_CC_INVALID_PRIV_LEVEL = 0x80;
++constexpr uint8_t IPMI_CC_EXCEEDS_USER_PRIV = 0x81;
++
++struct SetSessionPrivilegeLevel_t
++{
++    uint8_t completionCode;
++    uint8_t newPrivLevel : 4;
++    uint8_t reserved : 4;
++} __attribute__((packed));
++
++/*
++ * @brief Set Session Privilege Command
++ *
++ * This command is sent in authenticated format. When a session is activated,
++ * the session is set to an initial privilege level. A session that is
++ * activated at a maximum privilege level of Callback is set to an initial
++ * privilege level of Callback and cannot be changed. All other sessions are
++ * initially set to USER level, regardless of the maximum privilege level
++ * requested in the RAKP Message 1.
++ *
++ * This command cannot be used to set a privilege level higher than the lowest
++ * of the privilege level set for the user(via the Set User Access command) and
++ * the privilege limit for the channel that was set via the Set Channel Access
++ * command.
++ */
++std::vector<uint8_t> setSessionPrivilegeLevel(std::vector<uint8_t>& inPayload,
++        message::Handler& handler);
++
++constexpr uint8_t IPMI_CC_INVALID_SESSIONID = 0x87;
++
++struct CloseSessionRequest
++{
++    uint32_t sessionID;
++    uint8_t sessionHandle;
++} __attribute__((packed));
++
++struct CloseSessionResponse
++{
++    uint8_t completionCode;
++} __attribute__((packed));
++
++/*
++ * @brief Close Session Command
++ *
++ * This command is used to immediately terminate a session in progress. It is
++ * typically used to close the session that the user is communicating over,
++ * though it can be used to other terminate sessions in progress (provided that
++ * the user is operating at the appropriate privilege level, or the command is
++ * executed over a local channel - e.g. the system interface). Closing
++ * sessionless session ( session zero) is restricted in this command
++ */
++std::vector<uint8_t> closeSession(std::vector<uint8_t>& inPayload,
++                                  message::Handler& handler);
++
++void getSystemGUID(uint8_t* i_buffer, uint32_t io_numBytes);
++
++void sessionSetupCommands();
++
+diff --git a/command_table.cpp b/command_table.cpp
+new file mode 100644
+index 0000000..c305be1
+--- /dev/null
++++ b/command_table.cpp
+@@ -0,0 +1,76 @@
++#include "command_table.hpp"
++
++#include <host-ipmid/ipmid-api.h>
++
++#include <iomanip>
++#include <iostream>
++
++#include "message_handler.hpp"
++#include "sessions_manager.hpp"
++
++namespace command
++{
++
++void Table::registerCommand(uint32_t inCommand, std::unique_ptr<Entry> entry)
++{
++    std::cout << "I> Registering Command" << std::hex << inCommand << "\n";
++
++    commandTable[inCommand] = std::move(entry);
++}
++
++std::vector<uint8_t> Table::executeCommand(uint32_t inCommand,
++        std::vector<uint8_t>& commandData, message::Handler& handler)
++{
++    std::vector<uint8_t> response;
++
++    auto iterator = commandTable.find(inCommand);
++
++    if (iterator == commandTable.end())
++    {
++        std::cerr << "E> Table:: Command Not found: 0x" << std::hex << inCommand
++                  << "\n";
++
++        response.resize(1);
++        *(response.data()) = IPMI_CC_INVALID;
++    }
++    else
++    {
++        auto start = std::chrono::steady_clock::now();
++
++        response = iterator->second->executeCommand(commandData, handler);
++
++        auto end = std::chrono::steady_clock::now();
++
++        auto elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>
++                              (end - start);
++
++        // If command time execution time exceeds 2 seconds, log a time
++        // exceeded message
++        if (elapsedSeconds > 2s)
++        {
++            std::cerr << "E> IPMI command timed out:Elapsed time = "
++                      << elapsedSeconds.count() << "s" << "\n";
++        }
++    }
++    return response;
++}
++
++std::vector<uint8_t> NetIpmidEntry::executeCommand(std::vector<uint8_t>&
++        commandData, message::Handler& handler)
++{
++    std::vector<uint8_t> errResponse;
++
++    // Check if the command qualifies to be run prior to establishing a session
++    if (!sessionless && (handler.getSessionID() == session::SESSION_ZERO))
++    {
++        errResponse.resize(1);
++        *(errResponse.data()) = IPMI_CC_INSUFFICIENT_PRIVILEGE;
++        std::cerr << "E> Table::Not enough privileges for command 0x"
++                  << std::hex << command.command << "\n";
++        return errResponse;
++    }
++
++    return functor(commandData, handler);
++}
++
++} // namespace command
+diff --git a/command_table.hpp b/command_table.hpp
+new file mode 100644
+index 0000000..593d48a
+--- /dev/null
++++ b/command_table.hpp
+@@ -0,0 +1,237 @@
++#pragma once
++
++#include <functional>
++#include <map>
++
++#include "message_handler.hpp"
++
++namespace command
++{
++
++union CommandID
++{
++    uint32_t command;
++
++    uint8_t reserved;
++    message::PayloadType payloadType;
++
++    union
++    {
++        uint8_t netFn: 6;
++        uint8_t lun: 2;
++
++        uint8_t netFnLun;
++    } NetFnLun;
++
++    uint8_t cmd;
++} __attribute__((packed));
++
++/*
++ * CommandFunctor is the functor register for commands defined in
++ * phosphor-net-ipmid. This would take the request part of the command as a
++ * vector and a reference to the message handler. The response part of the
++ * command is returned as a vector.
++ */
++using CommandFunctor = std::function<std::vector<uint8_t>(
++                           std::vector<uint8_t>&, message::Handler&)> ;
++
++/*
++ * @struct CmdDetails
++ *
++ * Command details is used to register commands supported in phosphor-net-ipmid.
++ */
++struct CmdDetails
++{
++    CommandID command;
++    CommandFunctor functor;
++    session::Privilege privilege;
++    bool sessionless;
++};
++
++/*
++ * @enum NetFns
++ *
++ * A field that identifies the functional class of the message. The Network
++ * Function clusters IPMI commands into different sets.
++ */
++enum class NetFns
++{
++    CHASSIS            = 0x0000,   //0x00<<10
++    CHASSIS_RESP       = 0x0400,   //0x01<<10
++
++    BRIDGE             = 0x0800,   //0x02<<10
++    BRIDGE_RESP        = 0x0C00,   //0x03<<10
++
++    SENSOR             = 0x1000,   //0x04<<10
++    SENSOR_RESP        = 0x1400,   //0x05<<10
++    EVENT              = 0x1000,   //0x04<<10
++    EVENT_RESP         = 0x1400,   //0x05<<10
++
++    APP                = 0x1800,   //0x06<<10
++    APP_RESP           = 0x1C00,   //0x07<<10
++
++    FIRMWARE           = 0x2000,   //0x08<<10
++    FIRMWARE_RESP      = 0x2400,   //0x09<<10
++
++    STORAGE            = 0x2800,   //0x0A<<10
++    STORAGE_RESP       = 0x2C00,   //0x0B<<10
++
++    TRANSPORT          = 0x3000,   //0x0C<<10
++    TRANSPORT_RESP     = 0x3400,   //0x0D<<10
++
++    //>>
++    RESERVED_START     = 0x3800,   //0x0E<<10
++    RESERVED_END       = 0xAC00,   //0x2B<<10
++    //<<
++
++    GROUP_EXTN         = 0xB000,   //0x2C<<10
++    GROUP_EXTN_RESP    = 0xB400,   //0x2D<<10
++
++    OEM                = 0xB800,   //0x2E<<10
++    OEM_RESP           = 0xBC00,   //0x2F<<10
++};
++
++/*
++ * @class Entry
++ *
++ * This is the base class for registering IPMI commands. There are two ways of
++ * registering commands to phosphor-net-ipmid, the session related commands and
++ * provider commands
++ *
++ * Every commands has a privilege level which mentions the minimum session
++ * privilege level needed to execute the command
++ */
++
++class Entry
++{
++
++    public:
++        Entry(CommandID command, session::Privilege privilege):
++            command(command),
++            privilege(privilege) {}
++
++        virtual std::vector<uint8_t> executeCommand(
++            std::vector<uint8_t>& commandData,
++            message::Handler& handler) = 0;
++
++        auto getCommand() const
++        {
++            return command;
++        }
++
++        auto getPrivilege() const
++        {
++            return privilege;
++        }
++
++        virtual ~Entry() {};
++        Entry(const Entry&) = default;
++        Entry& operator=(const Entry&) = default;
++        Entry(Entry&&) = default;
++        Entry& operator=(Entry&&) = default;
++
++    protected:
++        CommandID command;
++
++        //Specifies the minimum privilege level required to execute this command
++        session::Privilege privilege;
++};
++
++/*
++ * @class NetIpmidEntry
++ *
++ * NetIpmidEntry is used to register commands that are consumed only in
++ * phosphor-net-ipmid. The RAKP commands, session commands and user management
++ * commands are examples of this.
++ *
++ * There are certain IPMI commands that can be executed before session can be
++ * established like Get System GUID, Get Channel Authentication Capabilities
++ * and RAKP commands.
++ */
++class NetIpmidEntry: public Entry
++{
++
++    public:
++        NetIpmidEntry(CommandID command,
++                      CommandFunctor functor,
++                      session::Privilege privilege,
++                      bool sessionless):
++            Entry(command, privilege),
++            functor(functor),
++            sessionless(sessionless) {}
++
++        /**
++         * @brief Execute the command
++         *
++         * Execute the command
++         *
++         * @param [in] Request Data for the command
++         * @param [in] Reference to the Message Handler
++         *
++         * @return Response data for the command
++         */
++        std::vector<uint8_t> executeCommand(std::vector<uint8_t>& commandData,
++                                            message::Handler& handler);
++
++        virtual ~NetIpmidEntry() {};
++        NetIpmidEntry(const NetIpmidEntry&) = default;
++        NetIpmidEntry& operator=(const NetIpmidEntry&) = default;
++        NetIpmidEntry(NetIpmidEntry&&) = default;
++        NetIpmidEntry& operator=(NetIpmidEntry&&) = default;
++
++    protected:
++        CommandFunctor functor;
++
++        bool sessionless;
++};
++
++class Table
++{
++    public:
++
++        Table() = default;
++        ~Table() = default;
++        // Command Table is a singleton so copy, copy-assignment, move and
++        // move assignment is deleted
++        Table(const Table&) = delete;
++        Table& operator=(const Table&) = delete;
++        Table(Table&&) = delete;
++        Table& operator=(Table&&) = delete;
++
++        using CommandTable = std::map<uint32_t, std::unique_ptr<Entry>>;
++
++        /**
++         * @brief Register a commands
++         *
++         * Register a command with the command table dispatcher
++         *
++         * @param [in] Command ID
++         * @param [in] Command Entry
++         *
++         * @return: None
++         *
++         * @note Registering an already registered command will overwrite the
++         *       existing entry with the new one.
++         */
++        void registerCommand(uint32_t inCommand, std::unique_ptr<Entry> entry);
++
++        /**
++         * @brief Execute the command
++         *
++         * Execute the command for the corresponding CommandID
++         *
++         * @param [in] Command ID to execute.
++         * @param [in] Request Data for the command
++         * @param [in] Reference to the Message Handler
++         *
++         * @return Response data for the command
++         */
++        std::vector<uint8_t> executeCommand(uint32_t inCommand,
++                                            std::vector<uint8_t>& commandData,
++                                            message::Handler& handler);
++
++    private:
++        CommandTable commandTable;
++};
++
++}// namespace command
+diff --git a/configure.ac b/configure.ac
+new file mode 100644
+index 0000000..88dc60c
+--- /dev/null
++++ b/configure.ac
+@@ -0,0 +1,23 @@
++# Initialization
++AC_PREREQ([2.69])
++AC_INIT([phosphor-net-ipmid], [1.0], [https://github.com/openbmc/phosphor-net-ipmid/issues])
++AC_CONFIG_HEADERS([config.h])
++AM_INIT_AUTOMAKE([subdir-objects -Wall -Werror foreign dist-xz])
++
++# Checks for programs.
++AC_PROG_CXX
++AX_CXX_COMPILE_STDCXX_14([noext])
++AM_PROG_AR
++AC_PROG_INSTALL
++AC_PROG_MAKE_SET
++
++# Checks for libraries.
++PKG_CHECK_MODULES([SYSTEMD], [libsystemd >= 221])
++AC_CHECK_LIB([crypto], [EVP_EncryptInit], [], [AC_MSG_FAILURE([can't find openssl crypto lib])])
++
++# Checks for header files.
++AC_CHECK_HEADER(systemd/sd-bus.h, ,[AC_MSG_ERROR([Could not find systemd/sd-bus.h...systemd developement package required])])
++# Checks for typedefs, structures, and compiler characteristics.
++
++AC_CONFIG_FILES([Makefile])
++AC_OUTPUT
+diff --git a/ipmiAppUtil.C b/ipmiAppUtil.C
+new file mode 100755
+index 0000000..de25205
+--- /dev/null
++++ b/ipmiAppUtil.C
+@@ -0,0 +1,113 @@
++#include <openssl/rand.h>
++#include <ipmiAppUtil.H>
++
++
++PacketField16_t::PacketField16_t() : iv_var_(0) {
++  set(0);
++}
++
++PacketField16_t::PacketField16_t(uint16_t i_val, ByteOrder i_byteOrder) : iv_var_(0) {
++  set(i_val, i_byteOrder);
++}
++
++PacketField16_t::~PacketField16_t() {
++}
++
++uint16_t PacketField16_t::get(ByteOrder i_byteOrder) {
++  uint16_t l_var = 0;
++
++  switch (i_byteOrder) {
++    case IPMI: // If the HOST is Big Endian, use htole16
++      l_var = iv_var_;
++      break;
++
++    case NETWORK:
++      l_var = htons(iv_var_);
++      break;
++
++    default: //HOST order
++      l_var = iv_var_;
++      break;
++  }
++
++  return l_var;
++}
++
++void PacketField16_t::set(uint16_t  i_val, ByteOrder i_byteOrder) {
++  switch (i_byteOrder) {
++    case IPMI: // If the HOST is Big Endian, use le16toh
++      iv_var_ = i_val;
++      break;
++
++    case NETWORK:
++      iv_var_ = ntohs(i_val);
++      break;
++
++    default: //HOST order
++      iv_var_ = i_val;
++      break;
++  }
++}
++
++PacketField32_t::PacketField32_t() : iv_var_(0) {
++  set(0);
++}
++
++PacketField32_t::PacketField32_t(uint32_t  i_val, ByteOrder i_byteOrder) : iv_var_(0) {
++  set(i_val, i_byteOrder);
++}
++
++PacketField32_t::~PacketField32_t() {
++}
++
++uint32_t PacketField32_t::get(ByteOrder i_byteOrder) {
++  uint32_t l_var = 0;
++
++  switch (i_byteOrder) {
++    case IPMI: // If the HOST is Big Endian, use htole32
++      l_var = iv_var_;
++      break;
++
++    case NETWORK:
++      l_var = htonl(iv_var_);
++      break;
++
++    default: //HOST order
++      l_var = iv_var_;
++      break;
++  }
++
++  return l_var;
++}
++
++void PacketField32_t::set(uint32_t i_val, ByteOrder i_byteOrder) {
++  switch (i_byteOrder) {
++    case IPMI: // If the HOST is Big Endian, use le32toh
++      iv_var_ = i_val;
++      break;
++
++    case NETWORK:
++      iv_var_ = ntohl(i_val);
++      break;
++
++    default: //HOST order
++      iv_var_ = i_val;
++      break;
++    }
++}
++
++/*# Function Specification
++ *
++ * @Overview:
++ *  Generate specified number of random bytes.
++ *
++ * @Thread:  Daemon/Library
++ *
++ * @note NOTES:
++ *  # None.
++ */
++void ipmiGenerateRandomBytes(uint8_t* i_buffer, uint32_t io_numBytes)
++{
++  RAND_bytes(i_buffer,io_numBytes);
++}
++
+diff --git a/ipmiAppUtil.H b/ipmiAppUtil.H
+new file mode 100755
+index 0000000..3f39f16
+--- /dev/null
++++ b/ipmiAppUtil.H
+@@ -0,0 +1,121 @@
++#ifndef IPMIAPPUTIL_H_
++#define IPMIAPPUTIL_H_
++
++#include <stack>
++#include <sys/stat.h>
++#include <errno.h>
++#include <endian.h>
++#include <arpa/inet.h>
++#include <ipmi.H>
++#include <ipmiTrace.H>
++
++typedef std::function<void (void)> IpmiCleanupCallbackPtr_t;
++
++/**
++ * @brief IpmiAppDefines
++ *
++ * @par Detailed Description:
++ *  Defines IPMI App parameters.
++ */
++enum IpmiAppDefines
++{
++  IPMI_BMC_GUID_LEN = 16,  //System GUID length
++};
++
++enum ByteOrder
++{
++  IPMI,       //Little Endian
++  HOST,       //Can be either Little Endian or Big Endian based on Service Processor
++  NETWORK,    //Always Big Endian
++};
++
++class PacketField16_t {
++ public:
++  PacketField16_t();
++
++  PacketField16_t(uint16_t i_val, ByteOrder i_byteOrder = HOST);
++
++  ~PacketField16_t();
++
++  uint16_t get(ByteOrder i_byteOrder = HOST);
++
++  void set(uint16_t  i_val, ByteOrder i_byteOrder = HOST);
++
++ private:
++  uint16_t iv_var_;
++};
++
++class PacketField32_t {
++ public:
++  PacketField32_t();
++
++  PacketField32_t(uint32_t  i_val, ByteOrder i_byteOrder = HOST);
++
++  ~PacketField32_t();
++
++  uint32_t get(ByteOrder i_byteOrder = HOST);
++
++  void set(uint32_t  i_val, ByteOrder i_byteOrder = HOST);
++
++ private:
++    uint32_t iv_var_;
++};
++
++/**
++ * @brief Class Template SingletonHolder
++ *
++ * Provides Singleton amenities for a type T
++ */
++template <typename T>
++class SingletonHolder : private T
++{
++ public:
++  /**
++   *  @brief Returns static singleton instance.
++   *
++   *  Only once the static instance is getting created and
++   *  is in a thread-safe manner.
++   *
++   *  @return T&
++   *      Static singleton instance (type T)
++   *
++   */
++  static T& Instance()
++  {
++    static SingletonHolder<T> instance;
++    return instance;
++  }
++
++ private:
++  // Constructor disabled. There is no way to make an instance of a
++  // SingletonHolder, the only public function is a static class function
++  SingletonHolder() : T() {};
++};
++
++
++#pragma pack(1)
++union IpmiCommandID
++{
++  uint32_t cmdCode;
++
++  uint8_t reserved;           //May be use for channel?
++  uint8_t payloadType;
++
++  union
++  {
++    uint8_t netFn:6;
++    uint8_t lun:2;
++
++    uint8_t netFnLun;
++  }NetFnLun;
++
++  uint8_t cmd;
++};
++#pragma pack()
++
++/**
++ * @brief Generate specified number of random bytes.
++ */
++void ipmiGenerateRandomBytes(uint8_t* i_buffer, uint32_t io_numBytes);
++
++#endif /* IPMIAPPUTIL_H_ */
+diff --git a/ipmiCipherInterfaces.C b/ipmiCipherInterfaces.C
+new file mode 100755
+index 0000000..557f2a9
+--- /dev/null
++++ b/ipmiCipherInterfaces.C
+@@ -0,0 +1,308 @@
++#include <ipmiCipherInterfaces.H>
++
++IpmiSessionKeys::IpmiSessionKeys()
++:iv_userNameLength(0),iv_userName(),iv_userKeyLength(0),iv_userKey(),
++iv_bmcRandomNumLength(0),iv_bmcRandomNum(),iv_rcRandomNumLength(0),iv_rcRandomNum(),
++iv_sessionIntegrityKeyLength(0),iv_sessionIntegrityKey(),iv_sessionKeyLength_k1(0),
++iv_sessionKey_k1(),iv_sessionKeyLength_k2(0),iv_sessionKey_k2()
++{
++
++}
++
++IpmiSessionKeys::~IpmiSessionKeys()
++{
++
++}
++
++void IpmiSessionKeys::getUserName(void*     o_toBuffer,         ///< Buffer data is read into
++                                  uint8_t&  i_size )
++{
++    uint32_t l_size = (iv_userNameLength > i_size)?i_size:iv_userNameLength;
++    memcpy(o_toBuffer,iv_userName,l_size);
++    i_size = l_size;
++}
++
++void IpmiSessionKeys::setUserName( const void*        i_buffer, ///< Source buffer data is written from
++                                         uint8_t      i_size )  ///< Size in bytes of data to be written
++{
++    uint32_t l_size = (IPMI_USER_NAME_MAX_LENGTH > i_size)?i_size:IPMI_USER_NAME_MAX_LENGTH;
++    memcpy(iv_userName,i_buffer,l_size);
++    iv_userNameLength = l_size;
++}
++
++void IpmiSessionKeys::getUserKey(void*     o_toBuffer,         ///< Buffer data is read into
++                                 uint32_t& i_size )
++{
++    uint32_t l_size = (iv_userKeyLength > i_size)?i_size:iv_userKeyLength;
++    memcpy(o_toBuffer,iv_userKey,l_size);
++    i_size = l_size;
++}
++
++void IpmiSessionKeys::setUserKey( const void*        i_buffer, ///< Source buffer data is written from
++                                        uint32_t     i_size )  ///< Size in bytes of data to be written
++{
++    uint32_t l_size = (IPMI_USER_KEY_MAX_LENGTH > i_size)?i_size:IPMI_USER_KEY_MAX_LENGTH;
++    memcpy(iv_userKey,i_buffer,l_size);
++    iv_userKeyLength = l_size;
++}
++
++void IpmiSessionKeys::getBmcRandomNum(void*     o_toBuffer,         ///< Buffer data is read into
++                                      uint32_t& i_size )
++{
++    uint32_t l_size = (iv_bmcRandomNumLength > i_size)?i_size:iv_bmcRandomNumLength;
++    memcpy(o_toBuffer,iv_bmcRandomNum,l_size);
++    i_size = l_size;
++}
++
++void IpmiSessionKeys::setBmcRandomNum( const void*        i_buffer, ///< Source buffer data is written from
++                                             uint32_t     i_size )  ///< Size in bytes of data to be written
++{
++    uint32_t l_size = (IPMI_BMC_RANDOM_NUMBER_LEN > i_size)?i_size:IPMI_BMC_RANDOM_NUMBER_LEN;
++    memcpy(iv_bmcRandomNum,i_buffer,l_size);
++    iv_bmcRandomNumLength = l_size;
++}
++
++void IpmiSessionKeys::getRcRandomNum(void*     o_toBuffer,         ///< Buffer data is read into
++                                     uint32_t& i_size )
++{
++    uint32_t l_size = (iv_rcRandomNumLength > i_size)?i_size:iv_rcRandomNumLength;
++    memcpy(o_toBuffer,iv_rcRandomNum,l_size);
++    i_size = l_size;
++}
++
++void IpmiSessionKeys::setRcRandomNum( const void*        i_buffer, ///< Source buffer data is written from
++                                            uint32_t     i_size )  ///< Size in bytes of data to be written
++{
++    uint32_t l_size = (IPMI_REMOTE_CONSOLE_RANDOM_NUMBER_LEN > i_size)?i_size:IPMI_REMOTE_CONSOLE_RANDOM_NUMBER_LEN;
++    memcpy(iv_rcRandomNum,i_buffer,l_size);
++    iv_rcRandomNumLength = l_size;
++}
++
++void IpmiSessionKeys::getSIK(void*     o_toBuffer,         ///< Buffer data is read into
++                             uint32_t& i_size )
++{
++    uint32_t l_size = (iv_sessionIntegrityKeyLength > i_size)?i_size:iv_sessionIntegrityKeyLength;
++    memcpy(o_toBuffer,iv_sessionIntegrityKey,l_size);
++    i_size = l_size;
++}
++
++void IpmiSessionKeys::setSIK( const void*        i_buffer, ///< Source buffer data is written from
++                                    uint32_t     i_size )  ///< Size in bytes of data to be written
++{
++    uint32_t l_size = (IPMI_SESSION_INTEGRITY_KEY_LENGTH > i_size)?i_size:IPMI_SESSION_INTEGRITY_KEY_LENGTH;
++    memcpy(iv_sessionIntegrityKey,i_buffer,l_size);
++    iv_sessionIntegrityKeyLength = l_size;
++}
++
++void IpmiSessionKeys::getK1(void*     o_toBuffer,         ///< Buffer data is read into
++                            uint32_t& i_size )
++{
++    uint32_t l_size = (iv_sessionKeyLength_k1 > i_size)?i_size:iv_sessionKeyLength_k1;
++    memcpy(o_toBuffer,iv_sessionKey_k1,l_size);
++    i_size = l_size;
++}
++
++void IpmiSessionKeys::setK1( const void*        i_buffer, ///< Source buffer data is written from
++                                   uint32_t     i_size )  ///< Size in bytes of data to be written
++{
++    uint32_t l_size = (IPMI_SESSION_K1_KEY_LENGTH > i_size)?i_size:IPMI_SESSION_K1_KEY_LENGTH;
++    memcpy(iv_sessionKey_k1,i_buffer,l_size);
++    iv_sessionKeyLength_k1 = l_size;
++}
++
++void IpmiSessionKeys::getK2(void*     o_toBuffer,         ///< Buffer data is read into
++                            uint32_t& i_size )
++{
++    uint32_t l_size = (iv_sessionKeyLength_k2 > i_size)?i_size:iv_sessionKeyLength_k2;
++    memcpy(o_toBuffer,iv_sessionKey_k2,l_size);
++    i_size = l_size;
++}
++
++void IpmiSessionKeys::setK2( const void*        i_buffer, ///< Source buffer data is written from
++                                   uint32_t     i_size )  ///< Size in bytes of data to be written
++{
++    uint32_t l_size = (IPMI_SESSION_K2_KEY_LENGTH > i_size)?i_size:IPMI_SESSION_K2_KEY_LENGTH;
++    memcpy(iv_sessionKey_k2,i_buffer,l_size);
++    iv_sessionKeyLength_k2 = l_size;
++}
++
++IpmiCipherAlgorithm::IpmiCipherAlgorithm()
++:iv_enabled(),iv_requested(),iv_applied()
++{
++    //Do nothing
++}
++
++IpmiCipherAlgorithm::~IpmiCipherAlgorithm()
++{
++
++}
++
++bool IpmiCipherAlgorithm::getState()
++{
++    return iv_enabled;
++}
++
++bool IpmiCipherAlgorithm::setState(bool i_enable)
++{
++    iv_enabled = i_enable;
++    return iv_enabled;
++}
++
++uint8_t IpmiCipherAlgorithm::getRequested()
++{
++    return iv_requested;
++}
++
++uint8_t IpmiCipherAlgorithm::setRequested(uint8_t i_algoIndex)
++{
++    iv_requested = i_algoIndex;
++    return iv_requested;
++}
++
++uint8_t IpmiCipherAlgorithm::getApplied()
++{
++    return iv_applied;
++}
++
++uint8_t IpmiCipherAlgorithm::setApplied(uint8_t i_algoIndex)
++{
++    iv_applied = i_algoIndex;
++    return iv_applied;
++}
++
++IpmiAuthenticationAlgoInterface::IpmiAuthenticationAlgoInterface()
++{
++}
++
++IpmiAuthenticationAlgoInterface::~IpmiAuthenticationAlgoInterface()
++{
++}
++
++IpmiIntegrityAlgoInterface::IpmiIntegrityAlgoInterface()
++{
++
++}
++
++IpmiIntegrityAlgoInterface::~IpmiIntegrityAlgoInterface()
++{
++
++}
++
++IpmiConfidentialityAlgoInterface::IpmiConfidentialityAlgoInterface()
++{
++
++}
++
++IpmiConfidentialityAlgoInterface::~IpmiConfidentialityAlgoInterface()
++{
++
++}
++
++IpmiUserAuthenticationInterface::IpmiUserAuthenticationInterface()
++:iv_authMethod(IPMI_AUTH_METHOD_UNSUPPORTED)
++{
++
++}
++
++IpmiUserAuthenticationInterface::IpmiUserAuthenticationInterface(IpmiAuthenticationMethod i_authMethod)
++:iv_authMethod(i_authMethod)
++{
++
++}
++
++IpmiUserAuthenticationInterface::~IpmiUserAuthenticationInterface()
++{
++
++}
++
++IpmiUserAuthenticationInterface::IpmiAuthenticationMethod IpmiUserAuthenticationInterface::getAuthMethod()
++{
++    return iv_authMethod;
++}
++
++
++IpmiSessionCipherSuite::IpmiSessionCipherSuite()
++    :iv_sessionKeys(),
++     iv_pAuthenticationAlgo(nullptr),iv_pIntegrityAlgo(nullptr),iv_pConfidentialityAlgo(nullptr)
++{
++
++}
++
++IpmiSessionCipherSuite::~IpmiSessionCipherSuite()
++{
++    if(iv_pAuthenticationAlgo)
++    {
++        delete iv_pAuthenticationAlgo;
++        iv_pAuthenticationAlgo = nullptr;
++    }
++
++    if(iv_pIntegrityAlgo)
++    {
++        delete iv_pIntegrityAlgo;
++        iv_pIntegrityAlgo = nullptr;
++    }
++
++    if(iv_pConfidentialityAlgo)
++    {
++        delete iv_pConfidentialityAlgo;
++        iv_pConfidentialityAlgo = nullptr;
++    }
++
++    if(iv_userAuthInterface)
++    {
++        delete iv_userAuthInterface;
++        iv_userAuthInterface = nullptr;
++    }
++}
++
++IpmiSessionKeys& IpmiSessionCipherSuite::getSessionKeys()
++{
++    return iv_sessionKeys;
++}
++
++
++IpmiAuthenticationAlgoInterface* IpmiSessionCipherSuite::getAuthCipher()
++{
++    return iv_pAuthenticationAlgo;
++}
++
++IpmiIntegrityAlgoInterface* IpmiSessionCipherSuite::getIntegrityCipher()
++{
++    return iv_pIntegrityAlgo;
++}
++
++IpmiConfidentialityAlgoInterface* IpmiSessionCipherSuite::getConfidentialityCipher()
++{
++    return iv_pConfidentialityAlgo;
++}
++
++IpmiAuthenticationAlgoInterface* IpmiSessionCipherSuite::setAuthCipher(IpmiAuthenticationAlgoInterface* i_algo)
++{
++    iv_pAuthenticationAlgo = i_algo;
++    return iv_pAuthenticationAlgo;
++}
++
++IpmiIntegrityAlgoInterface* IpmiSessionCipherSuite::setIntegrityCipher(IpmiIntegrityAlgoInterface* i_algo)
++{
++    iv_pIntegrityAlgo = i_algo;
++    return iv_pIntegrityAlgo;
++}
++
++IpmiConfidentialityAlgoInterface* IpmiSessionCipherSuite::setConfidentialityCipher(IpmiConfidentialityAlgoInterface* i_algo)
++{
++    iv_pConfidentialityAlgo = i_algo;
++    return iv_pConfidentialityAlgo;
++}
++
++IpmiUserAuthenticationInterface* IpmiSessionCipherSuite::getUserAuthInterface()
++{
++    return iv_userAuthInterface;
++}
++
++IpmiUserAuthenticationInterface* IpmiSessionCipherSuite
++                ::setUserAuthInterface(IpmiUserAuthenticationInterface* i_intf)
++{
++    iv_userAuthInterface = i_intf;
++    return iv_userAuthInterface;
++}
++
+diff --git a/ipmiCipherInterfaces.H b/ipmiCipherInterfaces.H
+new file mode 100755
+index 0000000..e540147
+--- /dev/null
++++ b/ipmiCipherInterfaces.H
+@@ -0,0 +1,275 @@
++#ifndef IPMICIPHERINTERFACES_H_
++#define IPMICIPHERINTERFACES_H_
++
++#include <openssl/sha.h>
++#include <openssl/hmac.h>
++#include <ipmiAppUtil.H>
++#include <ipmiMessage.H>
++
++class IpmiSessionKeys {
++ public:
++  enum IpmiSessionKeysDefines
++  {
++    IPMI_USER_NAME_MAX_LENGTH = 16,
++    IPMI_USER_KEY_MAX_LENGTH = 20,
++    IPMI_BMC_RANDOM_NUMBER_LEN = 16,
++    IPMI_REMOTE_CONSOLE_RANDOM_NUMBER_LEN = 16,
++    IPMI_SESSION_INTEGRITY_KEY_LENGTH = SHA_DIGEST_LENGTH,
++    IPMI_SESSION_K1_KEY_LENGTH = SHA_DIGEST_LENGTH,
++    IPMI_SESSION_K2_KEY_LENGTH = SHA_DIGEST_LENGTH,
++  };
++
++  IpmiSessionKeys();
++
++  ~IpmiSessionKeys();
++
++  void getUserName(void* o_toBuffer,         ///< Buffer data is read into
++                   uint8_t& io_size );
++
++  void setUserName( const void*        i_buffer, ///< Source buffer data is written from
++                          uint8_t      i_size );  ///< Size in bytes of data to be written
++
++
++  void getUserKey(void*     o_toBuffer,         ///< Buffer data is read into
++                  uint32_t& io_size );
++
++  void setUserKey( const void*        i_buffer, ///< Source buffer data is written from
++                         uint32_t     i_size );  ///< Size in bytes of data to be written
++
++  void getBmcRandomNum(void*     o_toBuffer,         ///< Buffer data is read into
++                       uint32_t& io_size );
++
++
++  void setBmcRandomNum( const void*        i_buffer, ///< Source buffer data is written from
++                              uint32_t     i_size );  ///< Size in bytes of data to be written
++
++
++  void getRcRandomNum(void*     o_toBuffer,         ///< Buffer data is read into
++                      uint32_t& io_size );
++
++
++  void setRcRandomNum( const void*        i_buffer, ///< Source buffer data is written from
++                             uint32_t     i_size );  ///< Size in bytes of data to be written
++
++
++  void getSIK(void*     o_toBuffer,         ///< Buffer data is read into
++              uint32_t& io_size );
++
++
++  void setSIK( const void*        i_buffer, ///< Source buffer data is written from
++                     uint32_t     i_size );  ///< Size in bytes of data to be written
++
++
++  void getK1(void*     o_toBuffer,         ///< Buffer data is read into
++             uint32_t& io_size );
++
++
++  void setK1( const void*        i_buffer, ///< Source buffer data is written from
++                    uint32_t     i_size );  ///< Size in bytes of data to be written
++
++
++  void getK2(void*     o_toBuffer,         ///< Buffer data is read into
++             uint32_t& io_size );
++
++
++  void setK2( const void*        i_buffer, ///< Source buffer data is written from
++                    uint32_t     i_size );  ///< Size in bytes of data to be written
++ private:
++  // User Name
++  uint32_t iv_userNameLength;
++  uint8_t iv_userName[IPMI_USER_NAME_MAX_LENGTH];
++
++  //User Key
++  uint32_t iv_userKeyLength;
++  uint8_t iv_userKey[IPMI_USER_KEY_MAX_LENGTH];
++
++  //Session Random Numbers
++  uint32_t iv_bmcRandomNumLength;
++  uint8_t iv_bmcRandomNum[IPMI_BMC_RANDOM_NUMBER_LEN];
++  uint32_t iv_rcRandomNumLength;
++  uint8_t iv_rcRandomNum[IPMI_REMOTE_CONSOLE_RANDOM_NUMBER_LEN];
++
++  //Session Integrity Key (SIK)
++  uint32_t iv_sessionIntegrityKeyLength;
++  uint8_t iv_sessionIntegrityKey[IPMI_SESSION_INTEGRITY_KEY_LENGTH];
++
++  //K1 <used in Integrity Algo>
++  uint32_t iv_sessionKeyLength_k1;
++  uint8_t iv_sessionKey_k1[IPMI_SESSION_K1_KEY_LENGTH];
++
++  //K2 <used in Confidentiality Algo>
++  uint32_t iv_sessionKeyLength_k2;
++  uint8_t iv_sessionKey_k2[IPMI_SESSION_K2_KEY_LENGTH];
++};
++
++class IpmiCipherAlgorithm {
++ public:
++  enum IpmiCipherAlgoType
++  {
++      IPMI_CIPHER_ALGO_TYPE_AUTHENTICATION,
++      IPMI_CIPHER_ALGO_TYPE_INTEGRITY,
++      IPMI_CIPHER_ALGO_TYPE_CONFIDENTIALITY,
++  };
++
++  virtual ~IpmiCipherAlgorithm();
++
++  bool getState();
++
++  bool setState(bool i_enable);
++
++  uint8_t getRequested();
++
++  uint8_t setRequested(uint8_t i_algoIndex);
++
++  uint8_t getApplied();
++
++  uint8_t setApplied(uint8_t i_algoIndex);
++
++ protected:
++  IpmiCipherAlgorithm();
++
++  bool iv_enabled;
++  uint8_t iv_requested;
++  uint8_t iv_applied;
++};
++
++//Cipher Algorithm Base Classes
++class IpmiAuthenticationAlgoInterface : public IpmiCipherAlgorithm {
++ public:
++  enum IpmiAuthenticationAlgorithms
++      {
++          IPMI_RAKP_NONE = 0,
++          IPMI_RAKP_HMAC_SHA1,
++
++          IPMI_RAKP_INVALID = 0xFF,
++      };
++
++  IpmiAuthenticationAlgoInterface();
++
++  virtual ~IpmiAuthenticationAlgoInterface();
++
++  //Extensible Methods
++
++  virtual void generateKeyExchangeAuthCode_RAKP2(IpmiSessionKeys* i_sessionSlot,
++                                                 const uint8_t* i_input,
++                                                 uint32_t i_inputLength,
++                                                 uint8_t* o_key,
++                                                 uint32_t& o_keyLength) = 0;
++
++  //Returns False if verification fails
++  virtual bool verifyKeyExchangeAuthCode_RAKP3(IpmiSessionKeys* i_sessionSlot,
++                                               uint8_t* i_key,
++                                               uint32_t i_keyLength) = 0;
++
++  virtual void generateSessionIntegrityKey_RAKP3(IpmiSessionKeys* i_sessionSlot) = 0;
++
++  virtual void generateIntegrityCheckValue_RAKP4(IpmiSessionKeys* i_sessionSlot,
++                                                 uint8_t*& o_key,
++                                                 uint32_t& o_keyLength) = 0;
++};
++
++class IpmiIntegrityAlgoInterface : public IpmiCipherAlgorithm {
++ public:
++  enum IpmiIntegtrityAlgorithms
++  {
++      IPMI_INTEGRITY_NONE = 0,
++      IPMI_INTEGRITY_HMAC_SHA1_96,
++
++      IPMI_INTEGRITY_INVALID = 0xFF,
++  };
++
++  IpmiIntegrityAlgoInterface();
++
++  virtual ~IpmiIntegrityAlgoInterface();
++
++ //Extensible Methods
++  virtual void generateIntegrityData(IpmiSessionKeys* i_sessionSlot,
++                                     IpmiMessage* i_message) = 0;
++
++  virtual bool verifyIntegrityData(IpmiSessionKeys* i_sessionSlot,
++                                   IpmiMessage* i_message) = 0;
++};
++
++class IpmiConfidentialityAlgoInterface : public IpmiCipherAlgorithm {
++ public:
++  enum IpmiConfidentialityAlgorithms
++  {
++    IPMI_CONFIDENTIALITY_NONE,
++    IPMI_CONFIDENTIALITY_AES_CBC_128,
++
++    IPMI_CONFIDENTIALITY_INVALID = 0xFF,
++  };
++
++  IpmiConfidentialityAlgoInterface();
++
++  virtual ~IpmiConfidentialityAlgoInterface();
++
++  //Extensible Methods
++  virtual void encryptData(IpmiSessionKeys* i_sessionSlot,
++                           IpmiMessage* i_message) = 0;
++
++  virtual void decryptData(IpmiSessionKeys* i_sessionSlot,
++                           IpmiMessage* i_message) = 0;
++};
++
++class IpmiUserAuthenticationInterface {
++ public:
++  enum IpmiAuthenticationMethod
++  {
++    IPMI_AUTH_METHOD_STATIC_PASS_KEY = 0,
++    IPMI_AUTH_METHOD_PASSWORD_FILE = 1,
++
++    IPMI_AUTH_METHOD_UNSUPPORTED = 0xFF,
++  };
++
++  IpmiUserAuthenticationInterface(IpmiAuthenticationMethod i_authMethod);
++
++  virtual ~IpmiUserAuthenticationInterface();
++
++  virtual IpmiAuthenticationMethod getAuthMethod();
++
++  //Extensible Methods
++  virtual bool AuthenticateUser(uint8_t*  i_userName, uint32_t  i_userNameLen,
++                                uint8_t*  o_key,      uint32_t& o_keyLen,
++                                uint8_t&   io_privilegeLevel ) = 0;
++
++ protected:
++  IpmiAuthenticationMethod iv_authMethod;
++
++ private:
++  IpmiUserAuthenticationInterface(); //Disabled
++};
++
++class IpmiSessionCipherSuite {
++ public:
++  IpmiSessionCipherSuite();
++
++  virtual ~IpmiSessionCipherSuite();
++
++  IpmiSessionKeys& getSessionKeys();
++
++  IpmiAuthenticationAlgoInterface* getAuthCipher();
++
++  IpmiIntegrityAlgoInterface* getIntegrityCipher();
++
++  IpmiConfidentialityAlgoInterface* getConfidentialityCipher();
++
++  IpmiAuthenticationAlgoInterface* setAuthCipher(IpmiAuthenticationAlgoInterface* i_algo);
++
++  IpmiIntegrityAlgoInterface* setIntegrityCipher(IpmiIntegrityAlgoInterface* i_algo);
++
++  IpmiConfidentialityAlgoInterface* setConfidentialityCipher(IpmiConfidentialityAlgoInterface* i_algo);
++
++  IpmiUserAuthenticationInterface* getUserAuthInterface();
++
++  IpmiUserAuthenticationInterface* setUserAuthInterface(IpmiUserAuthenticationInterface* i_intf);
++
++ private:
++  IpmiSessionKeys iv_sessionKeys;
++  IpmiAuthenticationAlgoInterface* iv_pAuthenticationAlgo;
++  IpmiIntegrityAlgoInterface* iv_pIntegrityAlgo;
++  IpmiConfidentialityAlgoInterface* iv_pConfidentialityAlgo;
++  IpmiUserAuthenticationInterface* iv_userAuthInterface;
++};
++
++#endif /* IPMICIPHERINTERFACES_H_ */
+diff --git a/ipmiCiphers.C b/ipmiCiphers.C
+new file mode 100755
+index 0000000..56c0e3b
+--- /dev/null
++++ b/ipmiCiphers.C
+@@ -0,0 +1,511 @@
++#include <openssl/sha.h>
++#include <openssl/hmac.h>
++#include <openssl/evp.h>
++#include <openssl/rand.h>
++
++#include <ipmiCiphers.H>
++#include <ipmiMessageParsers.H>
++#include <ipmiAppUtil.H>
++#include <ipmiSession.H>
++#include <iostream>
++#include <string>
++
++IpmiAuthenticationAlgoNone::IpmiAuthenticationAlgoNone() {
++}
++
++IpmiAuthenticationAlgoNone::~IpmiAuthenticationAlgoNone() {
++}
++
++void IpmiAuthenticationAlgoNone::generateKeyExchangeAuthCode_RAKP2(IpmiSessionKeys* i_sessionSlot,
++                                                                   const uint8_t*   i_input,
++                                                                   uint32_t         i_inputLength,
++                                                                   uint8_t*         o_key,
++                                                                   uint32_t&        o_keyLength) {
++  uint8_t l_key[20] = {};
++  uint32_t l_keyLength = 20;
++  i_sessionSlot->getUserKey(l_key,l_keyLength);
++
++  HMAC(EVP_sha1(),l_key,l_keyLength,i_input,i_inputLength, o_key,&o_keyLength);
++}
++
++//Returns False if verification fails
++bool IpmiAuthenticationAlgoNone::verifyKeyExchangeAuthCode_RAKP3(IpmiSessionKeys* i_sessionKeys,
++                                                                 uint8_t* i_key,
++                                                                 uint32_t i_keyLength) {
++  return true;
++}
++
++void IpmiAuthenticationAlgoNone::generateSessionIntegrityKey_RAKP3(IpmiSessionKeys* i_sessionSlot) {
++}
++
++void IpmiAuthenticationAlgoNone::generateIntegrityCheckValue_RAKP4(IpmiSessionKeys* i_sessionSlot,
++                                                                   uint8_t*& o_key,
++                                                                   uint32_t& o_keyLength) {
++}
++
++
++IpmiIntegrityAlgoNone::IpmiIntegrityAlgoNone() {
++}
++
++IpmiIntegrityAlgoNone::~IpmiIntegrityAlgoNone() {
++}
++
++void IpmiIntegrityAlgoNone::generateIntegrityData(IpmiSessionKeys* i_sessionSlot,
++                                                  IpmiMessage* i_message) {
++}
++
++bool IpmiIntegrityAlgoNone::verifyIntegrityData(IpmiSessionKeys* i_sessionSlot,
++                                                IpmiMessage* i_message) {
++    return true;
++}
++
++IpmiIntegrityAlgoHmacSha1_96::IpmiIntegrityAlgoHmacSha1_96() {
++}
++
++IpmiIntegrityAlgoHmacSha1_96::~IpmiIntegrityAlgoHmacSha1_96() {
++}
++
++void Ipmi_GenerateIntegrityCode(uint8_t* i_buffer, uint16_t i_len, uint8_t* o_buffer,
++                                uint32_t &o_len, IpmiSessionKeys* i_sessionSlot) {
++    if(!i_sessionSlot || i_buffer == nullptr ) return;
++
++    uint8_t k1_buffer[SHA_DIGEST_LENGTH];
++    uint32_t k1_length = 0;
++    uint32_t gen_len = 0;
++
++    uint8_t l_sik_hmacBuffer[SHA_DIGEST_LENGTH] = {};
++    uint32_t l_sik_hmacBuflen = sizeof(l_sik_hmacBuffer);
++
++    i_sessionSlot->getSIK(l_sik_hmacBuffer,l_sik_hmacBuflen);
++
++    uint8_t CONST_1[] =  {0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
++         0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01};
++
++    HMAC(EVP_sha1(), l_sik_hmacBuffer, l_sik_hmacBuflen, CONST_1, 20, k1_buffer, &k1_length);
++
++    HMAC(EVP_sha1(), k1_buffer, k1_length, i_buffer, i_len, o_buffer, &gen_len);
++
++    o_len = gen_len;
++
++}
++
++void IpmiIntegrityAlgoHmacSha1_96::generateIntegrityData(IpmiSessionKeys* i_sessionSlot,
++                                                         IpmiMessage* i_message) {
++    Ipmi20Parser::SessionHeader_t* l_hdr =
++                          reinterpret_cast<Ipmi20Parser::SessionHeader_t*>(i_message->getPacket());
++    l_hdr->payloadType = (l_hdr->payloadType | 0x40);
++
++    uint8_t* l_pOutgoingPacket = i_message->getPacket();
++    uint32_t l_lanMsgLength = i_message->getPacketLength();
++
++    uint8_t generated_authcode[SHA_DIGEST_LENGTH] = {};
++    uint32_t gen_auth_len = 0;
++
++    Ipmi_GenerateIntegrityCode(l_pOutgoingPacket + 4,  //Skip RMCP Hdr
++                               l_lanMsgLength - 4,
++                               generated_authcode,
++                               gen_auth_len,
++                               i_sessionSlot);
++
++    uint8_t* l_intgData = new uint8_t[gen_auth_len];
++    memcpy(l_intgData,generated_authcode,gen_auth_len);
++    i_message->setIntegrityData(l_intgData,true);
++    i_message->setIntegrityDataLength(12);
++    return;
++}
++
++bool IpmiIntegrityAlgoHmacSha1_96::verifyIntegrityData(IpmiSessionKeys* i_sessionSlot,
++                                                       IpmiMessage* i_message) {
++    if( ! i_message->getIsPacketAuthenticated() )
++    {
++        return true;
++    }
++
++    const uint32_t IPMI_SESSION_HEADER_AUTH_TYPE_OFFSET = 4;
++    const uint32_t IPMI_SESSION_TRAILER_SIZE=2;
++    const uint32_t IPMI_SESSION_HEADER_SIZE=12;
++
++    bool l_valid = false;
++
++    uint8_t generated_authcode[SHA_DIGEST_LENGTH] = {};
++    uint32_t gen_auth_len= 0;
++
++    uint8_t* l_pReceivedMsg = i_message->getPacket();
++
++    uint32_t l_RcvMsgLength = i_message->getPayloadLength().get();
++    l_RcvMsgLength += IPMI_SESSION_HEADER_SIZE;
++    l_RcvMsgLength += (4 - ((i_message->getPayloadLength().get()+2)%4)); //Pad bytes
++    l_RcvMsgLength += IPMI_SESSION_TRAILER_SIZE;
++
++    Ipmi_GenerateIntegrityCode(l_pReceivedMsg + IPMI_SESSION_HEADER_AUTH_TYPE_OFFSET,
++                               l_RcvMsgLength ,
++                               generated_authcode,
++                               gen_auth_len,
++                               i_sessionSlot);
++
++    uint8_t * bmc_authcode = i_message->getIntegrityData();
++
++    int value = memcmp(bmc_authcode, generated_authcode, 12);
++    if (value == 0)
++        l_valid = true;
++    else
++    {
++        std::cerr<<"E> IPMI Packet Integrity Verification failed"<<std::endl;
++        l_valid = false;
++    }
++
++    return l_valid;
++}
++
++IpmiConfidentialityAlgoNone::IpmiConfidentialityAlgoNone() {
++}
++
++IpmiConfidentialityAlgoNone::~IpmiConfidentialityAlgoNone() {
++
++}
++
++void IpmiConfidentialityAlgoNone::encryptData(IpmiSessionKeys* i_sessionSlot,
++                                              IpmiMessage* i_message) {
++}
++
++void IpmiConfidentialityAlgoNone::decryptData(IpmiSessionKeys* i_sessionSlot,
++                                              IpmiMessage* i_message) {
++}
++
++IpmiConfidentialityAlgoAesCbc128::IpmiConfidentialityAlgoAesCbc128() {
++}
++
++IpmiConfidentialityAlgoAesCbc128::~IpmiConfidentialityAlgoAesCbc128() {
++}
++
++void ipmi_encrypt_aes_cbc_128(const uint8_t * iv, const uint8_t * key, const uint8_t * input,
++                              uint32_t input_length, uint8_t * output, uint32_t * bytes_written) {
++    EVP_CIPHER_CTX ctx;
++    EVP_CIPHER_CTX_init(&ctx);
++    EVP_EncryptInit_ex(&ctx, EVP_aes_128_cbc(), NULL, key, iv);
++    EVP_CIPHER_CTX_set_padding(&ctx, 0);
++
++
++    *bytes_written = 0;
++
++    if (input_length == 0)
++        return;
++
++//    assert((input_length % IPMI_CRYPT_AES_CBC_128_BLOCK_SIZE) == 0);
++
++    if(!EVP_EncryptUpdate(&ctx, output, (int *)bytes_written, input, input_length))
++    {
++        /* Error */
++        *bytes_written = 0;
++        return;
++    }
++    else
++    {
++        unsigned int tmplen;
++
++        if(!EVP_EncryptFinal_ex(&ctx, output + (*bytes_written), (int *)&tmplen))
++        {
++            //printf ("Failure\n");
++            *bytes_written = 0;
++            return; /* Error */
++        }
++        else
++        {
++            /* Success */
++            *bytes_written += tmplen;
++            EVP_CIPHER_CTX_cleanup(&ctx);
++        }
++    }
++}
++
++int ipmi_decrypt_aes_cbc_128(const uint8_t * iv, const uint8_t * key, const uint8_t * input,
++                             uint32_t input_length, uint8_t * output, uint32_t * bytes_written) {
++    EVP_CIPHER_CTX ctx;
++    EVP_CIPHER_CTX_init(&ctx);
++    EVP_DecryptInit_ex(&ctx, EVP_aes_128_cbc(), NULL, key, iv);
++    EVP_CIPHER_CTX_set_padding(&ctx, 0);
++
++
++    *bytes_written = 0;
++
++    if (input_length == 0)
++        return -1;
++
++
++    if (!EVP_DecryptUpdate(&ctx, output, (int *)bytes_written, input, input_length))
++    {
++        /* Error */
++        *bytes_written = 0;
++        return -1;
++    }
++    else
++    {
++        unsigned int tmplen;
++
++        if (!EVP_DecryptFinal_ex(&ctx, output + (*bytes_written), (int *)&tmplen))
++        {
++
++            //printf ("EVP_DecryptFinal_ex failed\n");
++            *bytes_written = 0;
++            return -1; /* Error */
++        }
++        else
++        {
++            /* Success */
++            *bytes_written += tmplen;
++            EVP_CIPHER_CTX_cleanup(&ctx);
++        }
++    }
++
++    return 0;
++
++}
++
++void IpmiConfidentialityAlgoAesCbc128::encryptData(IpmiSessionKeys* i_sessionSlot,
++                                                   IpmiMessage* i_message) {
++#define IPMI_CRYPT_AES_CBC_128_BLOCK_SIZE 0x10
++    Ipmi20Parser::SessionHeader_t* l_hdr = reinterpret_cast<Ipmi20Parser::SessionHeader_t*>(i_message->getPacket());
++    l_hdr->payloadType = (l_hdr->payloadType | 0x80);
++
++    uint8_t* i_buffer = i_message->getPayload();
++    uint16_t i_PayloadLen = i_message->getPayloadLength().get();
++    uint8_t* o_buffer = new uint8_t[IpmiMessage::IPMI_MESSAGE_MAX_PACKET_LENGTH];
++    uint16_t o_PayloadLength = 0;
++
++    uint8_t * padded_input;
++    uint32_t    mod, i, bytes_encrypted;
++    uint8_t   pad_length = 0;
++
++    uint8_t input_length = 0;
++
++    uint8_t l_sik_hmacBuffer[SHA_DIGEST_LENGTH] = {};
++    uint32_t l_sik_hmacBuflen = sizeof(l_sik_hmacBuffer);
++
++    i_sessionSlot->getSIK(l_sik_hmacBuffer,l_sik_hmacBuflen);
++
++    if (1)
++    {
++        // data length + payload length (1byte)
++        mod = (i_PayloadLen + 1) % IPMI_CRYPT_AES_CBC_128_BLOCK_SIZE;
++        if (mod)
++            pad_length = IPMI_CRYPT_AES_CBC_128_BLOCK_SIZE - mod;
++
++        padded_input = (uint8_t*)malloc(i_PayloadLen + pad_length + 1);
++        if (padded_input == nullptr) {
++            return;
++        }
++
++        memcpy(padded_input, i_buffer, i_PayloadLen);
++        /* add the pad */
++        for (i = 0; i < pad_length; ++i)
++            padded_input[i_PayloadLen + i] = i + 1;
++
++        /* add the pad length */
++        padded_input[i_PayloadLen + pad_length] = pad_length;
++
++        input_length = i_PayloadLen + pad_length +1;
++
++    }
++
++    /* Generate an initialization vector, IV, for the encryption process */
++    if (! RAND_bytes(o_buffer, IPMI_CRYPT_AES_CBC_128_BLOCK_SIZE))
++    {
++        free(padded_input);
++        padded_input = nullptr;
++        return;
++    }
++    uint8_t k2_buffer[SHA_DIGEST_LENGTH];
++    uint32_t k2_length = 0;
++
++    uint8_t CONST_K2[] =  {0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
++                           0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02};
++
++    HMAC(EVP_sha1(), l_sik_hmacBuffer, l_sik_hmacBuflen, CONST_K2, 20, k2_buffer, &k2_length);
++
++
++    ipmi_encrypt_aes_cbc_128(o_buffer,                                     /* IV              */
++                            k2_buffer,                                        /* K2              */
++                            padded_input,                               /* Data to encrypt */
++                            input_length,              /* Input length    */
++                            o_buffer + IPMI_CRYPT_AES_CBC_128_BLOCK_SIZE, /* output          */
++                            &bytes_encrypted);                          /* bytes written   */
++
++     o_PayloadLength = IPMI_CRYPT_AES_CBC_128_BLOCK_SIZE + bytes_encrypted;
++
++
++    free(padded_input);
++
++    delete[] static_cast<uint8_t*>(i_message->getPayload());
++    i_message->setPayload(o_buffer,true);
++    PacketField16_t l_len(o_PayloadLength);
++    i_message->setPayloadLength(l_len);
++
++    return;
++
++}
++
++void IpmiConfidentialityAlgoAesCbc128::decryptData(IpmiSessionKeys* i_sessionSlot,
++                                                   IpmiMessage* i_message) {
++    uint8_t * input = i_message->getPayload();
++    uint16_t  input_length = i_message->getPayloadLength().get();
++    uint8_t*  output = new uint8_t[IpmiMessage::IPMI_MESSAGE_MAX_PACKET_LENGTH];
++    uint16_t  payload_size = 0 ;
++
++    uint8_t * decrypted_payload;
++    uint32_t    bytes_decrypted;
++
++    uint8_t l_sik_hmacBuffer[SHA_DIGEST_LENGTH] = {};
++    uint32_t l_sik_hmacBuflen = sizeof(l_sik_hmacBuffer);
++
++    i_sessionSlot->getSIK(l_sik_hmacBuffer,l_sik_hmacBuflen);
++
++    decrypted_payload = (uint8_t*)malloc(input_length);
++    if (decrypted_payload == nullptr) {
++        return ;
++    }
++
++    uint8_t k2_buffer[SHA_DIGEST_LENGTH];
++    uint32_t k2_length = 0;
++
++    uint8_t CONST_K2[] =  {0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
++                           0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02};
++
++    HMAC(EVP_sha1(), l_sik_hmacBuffer, l_sik_hmacBuflen, CONST_K2, 20, k2_buffer, &k2_length);
++
++    int x =ipmi_decrypt_aes_cbc_128(input,                                /* IV              */
++                                k2_buffer,                                  /* Key             */
++                                input + IPMI_CRYPT_AES_CBC_128_BLOCK_SIZE,    /* Data to decrypt */
++                                input_length - IPMI_CRYPT_AES_CBC_128_BLOCK_SIZE,    /* Input length    */
++                                decrypted_payload,                    /* output          */
++                                &bytes_decrypted);                    /* bytes written   */
++
++    if (x == -1)
++    {
++        //printf ("decrypted error\n");
++        delete[] output;
++        return ;
++    }
++
++
++    if (bytes_decrypted != 0)
++    {
++        /* Success */
++        uint8_t conf_pad_length;
++        int i;
++
++        memcpy(output,
++                decrypted_payload,
++                bytes_decrypted);
++
++        /*
++         * We have to determine the payload size, by substracting the padding, etc.
++         * The last byte of the decrypted payload is the confidentiality pad length.
++         */
++
++        conf_pad_length = decrypted_payload[bytes_decrypted - 1];
++        payload_size = bytes_decrypted - conf_pad_length - 1;
++
++        /*
++         * Extra test to make sure that the padding looks like it should (should start
++         * with 0x01, 0x02, 0x03, etc...
++         */
++        for (i = 0; i < conf_pad_length; ++i)
++        {
++            if (decrypted_payload[payload_size + i] == (i + 1))
++            {
++    //               printf ("Confidentiality padding is correct\n");
++            }
++            else ;
++    //             printf ("Confidentiality padding is not correct\n");
++        }
++
++    }
++    else
++    {
++        //printf("ERROR: decryptd 0 bytes");
++        delete[] output;
++        return;
++    }
++
++    free(decrypted_payload);
++
++    //@TODO: not required but can make some clean intf to remove existing payload
++    //delete[] static_cast<uint8_t*>(i_message->getPayload());
++    i_message->setPayload(output,true);
++    PacketField16_t l_len(payload_size);
++    i_message->setPayloadLength(l_len);
++
++    return ;
++}
++
++IpmiUnsupportedPasswordAuthentication::IpmiUnsupportedPasswordAuthentication()
++:IpmiUserAuthenticationInterface(IpmiUserAuthenticationInterface::IPMI_AUTH_METHOD_UNSUPPORTED)
++{
++
++}
++
++IpmiUnsupportedPasswordAuthentication::~IpmiUnsupportedPasswordAuthentication() {
++}
++
++bool IpmiUnsupportedPasswordAuthentication::AuthenticateUser(uint8_t*  i_userName,
++                                                             uint32_t  i_userNameLen,
++                                                             uint8_t*  o_key,
++                                                             uint32_t& o_keyLen,
++                                                             uint8_t&  io_privilegeLevel) {
++  bool l_userValid = false;
++  o_keyLen = 0;
++  return l_userValid;
++}
++
++IpmiStaticPasswordAuthentication::IpmiStaticPasswordAuthentication()
++:IpmiUserAuthenticationInterface(IpmiUserAuthenticationInterface::IPMI_AUTH_METHOD_STATIC_PASS_KEY)
++{
++}
++
++IpmiStaticPasswordAuthentication::~IpmiStaticPasswordAuthentication() {
++}
++
++bool IpmiStaticPasswordAuthentication::AuthenticateUser(uint8_t* i_userName,
++                                                        uint32_t i_userNameLen, uint8_t* o_key,
++                                                        uint32_t& o_keyLen,
++                                                        uint8_t& io_privilegeLevel) {
++  bool l_userValid = false;
++
++  if(o_key)
++  {
++    //l_sessKeys.getUserName will give us the user name
++    //i_pSession->getSessionState().getPrevilegeLevel() will give us the
++    //  requested prv level.
++    //{'P','A','S','S','W','0','R','D', 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0  };
++    //@TODO: Do this dynamically
++    uint8_t l_userKey[20] = {'o','k',0,0,0,0,0,0,0,0,
++                              0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0  };
++    uint32_t l_userKeyLength = sizeof(l_userKey);
++    l_userValid = true;
++
++    o_keyLen = o_keyLen>l_userKeyLength?l_userKeyLength:o_keyLen;
++    memcpy(o_key,l_userKey,o_keyLen);
++  }
++
++  return l_userValid;
++}
++
++IpmiPasswordFileAuthentication::IpmiPasswordFileAuthentication()
++:IpmiUserAuthenticationInterface(IpmiUserAuthenticationInterface::IPMI_AUTH_METHOD_PASSWORD_FILE)
++{
++
++}
++
++IpmiPasswordFileAuthentication::~IpmiPasswordFileAuthentication() {
++}
++
++bool IpmiPasswordFileAuthentication::AuthenticateUser(uint8_t* i_userName, uint32_t i_userNameLen,
++                                                      uint8_t* o_key, uint32_t& io_keyLen,
++                                                      uint8_t& io_privilegeLevel) {
++  // Read the User Account that matches with the requested username and privilege level
++  // If the user account is valid return the User Password, Length and the allowed
++  // privilege level.
++
++    return true;
++}
++
+diff --git a/ipmiCiphers.H b/ipmiCiphers.H
+new file mode 100755
+index 0000000..2c9660b
+--- /dev/null
++++ b/ipmiCiphers.H
+@@ -0,0 +1,125 @@
++#ifndef IPMICIPHERS_H_
++#define IPMICIPHERS_H_
++
++#include <ipmiCipherInterfaces.H>
++
++//Cipher Algo Base Classes
++class IpmiAuthenticationAlgoNone : public IpmiAuthenticationAlgoInterface {
++ public:
++  IpmiAuthenticationAlgoNone();
++
++  virtual ~IpmiAuthenticationAlgoNone();
++
++  //Extensible Methods
++  virtual void generateKeyExchangeAuthCode_RAKP2(IpmiSessionKeys* i_sessionSlot,
++                                                   const uint8_t* i_input,
++                                                   uint32_t i_inputLength,
++                                                   uint8_t* o_key,
++                                                   uint32_t& o_keyLength);
++
++  //Returns False if verification fails
++  virtual bool verifyKeyExchangeAuthCode_RAKP3(IpmiSessionKeys* i_sessionSlot,
++                                                 uint8_t* i_key,
++                                                 uint32_t i_keyLength);
++
++  virtual void generateSessionIntegrityKey_RAKP3(IpmiSessionKeys* i_sessionSlot);
++
++  virtual void generateIntegrityCheckValue_RAKP4(IpmiSessionKeys* i_sessionSlot,
++                                                   uint8_t*& o_key,
++                                                   uint32_t& o_keyLength);
++};
++
++class IpmiIntegrityAlgoNone : public IpmiIntegrityAlgoInterface {
++ public:
++  IpmiIntegrityAlgoNone();
++
++  virtual ~IpmiIntegrityAlgoNone();
++
++  //Extensible Methods
++  virtual void generateIntegrityData(IpmiSessionKeys* i_sessionSlot,
++                                     IpmiMessage* i_message);
++
++  virtual bool verifyIntegrityData(IpmiSessionKeys* i_sessionSlot,
++                                   IpmiMessage* i_message);
++};
++
++class IpmiIntegrityAlgoHmacSha1_96 : public IpmiIntegrityAlgoInterface {
++ public:
++  IpmiIntegrityAlgoHmacSha1_96();
++
++  virtual ~IpmiIntegrityAlgoHmacSha1_96();
++
++  //Extensible Methods
++  virtual void generateIntegrityData(IpmiSessionKeys* i_sessionSlot,
++                                     IpmiMessage* i_message);
++
++  virtual bool verifyIntegrityData(IpmiSessionKeys* i_sessionSlot,
++                                   IpmiMessage* i_message);
++};
++
++class IpmiConfidentialityAlgoNone : public IpmiConfidentialityAlgoInterface {
++ public:
++  IpmiConfidentialityAlgoNone();
++
++  virtual ~IpmiConfidentialityAlgoNone();
++
++  //Extensible Methods
++  virtual void encryptData(IpmiSessionKeys* i_sessionSlot,
++                           IpmiMessage* i_message);
++
++  virtual void decryptData(IpmiSessionKeys* i_sessionSlot,
++                           IpmiMessage* i_message);
++};
++
++class IpmiConfidentialityAlgoAesCbc128 : public IpmiConfidentialityAlgoInterface {
++ public:
++  IpmiConfidentialityAlgoAesCbc128();
++
++  virtual ~IpmiConfidentialityAlgoAesCbc128();
++
++  //Extensible Methods
++  virtual void encryptData(IpmiSessionKeys* i_sessionSlot,
++                           IpmiMessage* i_message);
++
++  virtual void decryptData(IpmiSessionKeys* i_sessionSlot,
++                           IpmiMessage* i_message);
++};
++
++class IpmiUnsupportedPasswordAuthentication : public IpmiUserAuthenticationInterface {
++ public:
++    IpmiUnsupportedPasswordAuthentication();
++
++  virtual ~IpmiUnsupportedPasswordAuthentication();
++
++  //Extensible Methods
++  virtual bool AuthenticateUser(uint8_t*  i_userName, uint32_t  i_userNameLen,
++                                uint8_t*  o_key,      uint32_t& o_keyLen,
++                                uint8_t&   io_privilegeLevel);
++};
++
++class IpmiStaticPasswordAuthentication : public IpmiUserAuthenticationInterface {
++ public:
++  IpmiStaticPasswordAuthentication();
++
++  virtual ~IpmiStaticPasswordAuthentication();
++
++  //Extensible Methods
++  virtual bool AuthenticateUser(uint8_t*  i_userName, uint32_t  i_userNameLen,
++                                uint8_t*  o_key,      uint32_t& o_keyLen,
++                                uint8_t&   io_privilegeLevel);
++};
++
++class IpmiPasswordFileAuthentication : public IpmiUserAuthenticationInterface
++{
++ public:
++  IpmiPasswordFileAuthentication();
++
++    virtual ~IpmiPasswordFileAuthentication();
++
++  //Extensible Methods
++  virtual bool AuthenticateUser(uint8_t*  i_userName, uint32_t  i_userNameLen,
++                                uint8_t*  o_key,      uint32_t& o_keyLen,
++                                uint8_t&   io_privilegeLevel);
++};
++
++#endif /* IPMICIPHERS_H_ */
+diff --git a/ipmiCommandTable.C b/ipmiCommandTable.C
+new file mode 100755
+index 0000000..926c4a1
+--- /dev/null
++++ b/ipmiCommandTable.C
+@@ -0,0 +1,163 @@
++#include <ipmiCommandTable.H>
++#include <iomanip>
++#include <iostream>
++#include <ipmiMessageHandler.H>
++
++/*# Function Specification
++ *
++ * @Overview:
++ *  Atomically register a command with Command Table.
++ *
++ * @Thread: Daemon
++ *
++ * @note NOTES:
++ *  # Registering an already registered command will overwrite the command entry
++ *    with the new one.
++ */
++void IpmiCommandTable::Register(IpmiCommandTableEntry& i_entry)
++{
++  std::cout<<"I> Registering Command"<<std::hex<<i_entry.CommandID.cmdCode<<std::endl;
++
++  std::lock_guard<std::mutex> l_lock(iv_cmdTblMapMutex);
++
++  iv_cmdTblMap[i_entry.CommandID.cmdCode] = i_entry;
++}
++
++void IpmiCommandTable::Register(IpmiCommandTableEntry* i_array,
++                                uint32_t l_numOfEntries)
++{
++    for(uint32_t l_itor = 0; l_itor < l_numOfEntries ; ++l_itor)
++    {
++        Register(i_array[l_itor]);
++    }
++}
++
++void IpmiCommandTable::Register(uint32_t i_cmd, IpmiCommandFunc_t i_functor)
++{
++    IpmiCommandTableEntry l_entry;
++    l_entry.CommandID.cmdCode = i_cmd;
++    l_entry.concreteCommand = i_functor;
++    l_entry.canExecuteSessionless = false;
++    l_entry.privilegeMask = IPMI_SESSION_PRIVILEGE_ANY;
++    l_entry.supportedChannels = IPMI_CHANNEL_ANY;
++    l_entry.commandSupportMask = IPMI_COMMAND_SUPPORT_NO_DISABLE;
++
++    Register(l_entry);
++}
++
++/*# Function Specification
++ *
++ * @Overview:
++ *  Atomically unregister a command from the Command Table.
++ *
++ * @Thread: Daemon
++ *
++ * @note NOTES:
++ *  # None.
++ */
++void IpmiCommandTable::Unregister(uint32_t i_commandID)
++{
++    std::lock_guard<std::mutex> l_lock(iv_cmdTblMapMutex);
++
++    iv_cmdTblMap.erase(i_commandID);
++
++    std::cout<<"I> Un-Registering Command "<<std::hex<<i_commandID<<std::endl;
++}
++
++/*# Function Specification
++ *
++ * @Overview:
++ *  Return the singleton reference to IpmiCommandTable object.
++ *
++ * @Thread: Daemon
++ *
++ * @note NOTES:
++ *  # None.
++ */
++IpmiCommandTable& IpmiCommandTable::getInstance()
++{
++    return SingletonHolder<IpmiCommandTable>::Instance();
++}
++
++/*# Function Specification
++ *
++ * @Overview:
++ *  Execute the requested command.
++ *
++ * @Thread: Daemon
++ *
++ * @note NOTES:
++ *  # None.
++ */
++void IpmiCommandTable::ExecuteCommand(uint32_t i_commandID,
++                                      IpmiMessageHandler& io_sessCtrl)
++{
++    do
++    {
++        std::lock_guard<std::mutex> l_lock(iv_cmdTblMapMutex);
++
++        auto l_itor = iv_cmdTblMap.find(i_commandID);
++
++        if(l_itor == iv_cmdTblMap.end() )
++        {
++            std::cerr<<"E> IpmiCommandTable:: Command Not found: 0x"<<std::hex
++                                                      <<i_commandID<<std::endl;
++
++            //@TODO: Command is not registered. Send a completion code (Node Busy).
++            io_sessCtrl.iv_responsePayload = new uint8_t[1];
++            io_sessCtrl.iv_responsePayloadSize = sizeof(uint8_t);
++
++            *(io_sessCtrl.iv_responsePayload) = IPMICC_CMD_UNKNOWN;
++         }
++        else
++        {
++            //There is a handler registered.
++            std::cout<<"I> IpmiCommandTable:: Command found: 0x"<<std::hex
++                                                   <<i_commandID<<std::endl;
++
++            if(!l_itor->second.canExecuteSessionless)
++            {
++                //Check Command execution privileges
++                if(l_itor->second.privilegeMask > (io_sessCtrl.getSessionPrivilegeLevel() & 0x0F))
++                {
++                    std::cerr<<"E> IpmiCommandTable::Not enough privileges for command 0x"<<std::hex
++                                                          <<i_commandID<<std::endl;
++                     io_sessCtrl.iv_responsePayload = new uint8_t[1];
++                    io_sessCtrl.iv_responsePayloadSize = sizeof(uint8_t);
++                    *(io_sessCtrl.iv_responsePayload) = IPMICC_WRONG_PRIV;
++
++                    break;
++                }
++
++                //@TODO: Validate whether the command can be executed :#@Firewall
++            }
++
++            std::chrono::time_point<std::chrono::system_clock> l_startTime, l_endTime;
++            l_startTime = std::chrono::system_clock::now();
++
++            //Run the command
++            l_itor->second.concreteCommand(io_sessCtrl);
++
++            l_endTime = std::chrono::system_clock::now();
++
++            std::chrono::duration<double> elapsed_seconds = l_endTime-l_startTime;
++
++            if (elapsed_seconds.count() > 1)
++            {
++                std::cerr<<"E> IPMI command timed out:Elapsed time = "
++                    <<elapsed_seconds.count()<<"s"<<std::endl;
++            }
++        }
++    }while(0);
++}
++
++IpmiCommandTable::IpmiCommandTable()
++{
++
++}
++
++IpmiCommandTable::~IpmiCommandTable()
++{
++
++}
++
+diff --git a/ipmiCommandTable.H b/ipmiCommandTable.H
+new file mode 100755
+index 0000000..497b0d0
+--- /dev/null
++++ b/ipmiCommandTable.H
+@@ -0,0 +1,223 @@
++#ifndef IPMICOMMANDTABLE_H_
++#define IPMICOMMANDTABLE_H_
++
++#include <functional>
++#include <map>
++#include <ipmiAppUtil.H>
++#include <ipmiMessageHandler.H>
++
++class IpmiCommandTable {
++ public:
++
++    //synonyms
++    typedef std::function<void (IpmiMessageHandler&) > IpmiCommandFunc_t;
++
++    enum IpmiNetFns
++    {
++        CHASSIS                                 = 0x0000,   //0x00<<10
++        CHASSIS_RESP                            = 0x0400,   //0x01<<10
++
++        BRIDGE                                  = 0x0800,   //0x02<<10
++        BRIDGE_RESP                             = 0x0C00,   //0x03<<10
++
++        SENSOR                                  = 0x1000,   //0x04<<10
++        SENSOR_RESP                             = 0x1400,   //0x05<<10
++        EVENT                                   = 0x1000,   //0x04<<10
++        EVENT_RESP                              = 0x1400,   //0x05<<10
++
++        APP                                     = 0x1800,   //0x06<<10
++        APP_RESP                                = 0x1C00,   //0x07<<10
++
++        FIRMWARE                                = 0x2000,   //0x08<<10
++        FIRMWARE_RESP                           = 0x2400,   //0x09<<10
++
++        STORAGE                                 = 0x2800,   //0x0A<<10
++        STORAGE_RESP                            = 0x2C00,   //0x0B<<10
++
++        TRANSPORT                               = 0x3000,   //0x0C<<10
++        TRANSPORT_RESP                          = 0x3400,   //0x0D<<10
++
++        //>>
++        RESERVED_START                          = 0x3800,   //0x0E<<10
++        RESERVED_END                            = 0xAC00,   //0x2B<<10
++        //<<
++
++        GROUP_EXTN                              = 0xB000,   //0x2C<<10
++        GROUP_EXTN_RESP                         = 0xB400,   //0x2D<<10
++
++        OEM                                     = 0xB800,   //0x2E<<10
++        OEM_RESP                                = 0xBC00,   //0x2F<<10
++    };
++
++    enum IpmiSessionPrivileges
++    {
++        IPMI_SESSION_PRIVILEGE_ANY      = 0x00000000,
++        IPMI_SESSION_PRIVILEGE_CALLBACK = 0x01,
++        IPMI_SESSION_PRIVILEGE_USER     = 0x02,
++        IPMI_SESSION_PRIVILEGE_OPERATOR = 0x03,
++        IPMI_SESSION_PRIVILEGE_ADMIN    = 0x04,
++        IPMI_SESSION_PRIVILEGE_OEM      = 0x05,
++
++        IPMI_SESSION_PRIVILEGE_NONE     = 0xFFFFFFFF,
++    };
++
++    enum IpmiChannels
++    {
++        IPMI_CHANNEL_ANY                    = 0x00000000,
++        IPMI_CHANNEL_SYSTEM_INTERFACE_ONLY  = 0x00000001,
++        IPMI_CHANNEL_LOCAL_INTERFACES_ONLY  = 0x00000002,
++    };
++
++    enum IpmiCommandSupportMask
++    {
++        IPMI_COMMAND_SUPPORT_DEFAULT    = 0x00000000, //Supported by default
++                                                      //Can be configured
++                                                      //(enabled/disabled)
++
++        IPMI_COMMAND_SUPPORT_NO_DISABLE = 0x00000001, //Supported and cannot be
++                                                      //configured (enable/disable)
++
++        IPMI_COMMAND_SUPPORT_NO_DEFAULT = 0x00000002, //Disabled but can be
++                                                      //configured
++
++        IPMI_COMMAND_SUPPORT_DISABLED   = 0x10000000, //Support has been disabled
++    };
++
++    struct IpmiCommandTableEntry
++    {
++        IpmiCommandID CommandID;
++
++        IpmiCommandFunc_t concreteCommand;
++
++        bool canExecuteSessionless;      //Note: When true, command works at any
++                                         //privilege level,can be sent prior to
++                                         //a session being established
++
++        IpmiSessionPrivileges privilegeMask;//Specifies the minimum privilege level
++                                            //required to execute this command.
++                                            //Note: Command is supported at given
++                                            //privilege level or higher
++
++        IpmiChannels supportedChannels;  //Specifies the channels this command
++                                         //can be requested on.
++                                         //Note: This can be used with
++                                         //"Get NetFn Support" command.
++
++        IpmiCommandSupportMask commandSupportMask;  //Used to derive the values for the
++                                                    //firmware firewall.
++    };
++
++    typedef std::map<uint32_t,IpmiCommandTableEntry> IpmiCommandTableMap_t;
++
++    /**
++     * @brief IpmiCommandTable::Register : Register a command.
++     *
++     * @par Detailed Description:
++     *  Register a command with the dispatcher (Command Table)
++     *
++     * @param (IpmiCommandTableEntry&)i_entry: Reference to the table entry
++     *
++     * @retval: None
++     *
++     * @pre None.
++     *
++     * @post None.
++     *
++     * @test Test Cases:
++     *  <Test Case Description paragraph>
++     *
++     * @todo TO DOs:
++     *  # Populate the test case section.
++     *
++     * @note NOTES:
++     *  # Registering an already registered command will overwrite the existing
++     *    entry with the new one.
++     */
++    virtual void Register(IpmiCommandTableEntry& i_entry);
++    virtual void Register(IpmiCommandTableEntry* i_array,uint32_t l_numOfEntries);
++
++    virtual void Register(uint32_t i_cmd, IpmiCommandFunc_t i_functor);
++
++    /**
++     * @brief IpmiCommandTable::Unregister : Unregister a command.
++     *
++     * @par Detailed Description:
++     *  Unregister a command from the command table (dispatcher).
++     *
++     * @param (uint32_t) i_commandID: Command ID to unregister.
++     *
++     * @retval None.
++     *
++     * @pre None.
++     *
++     * @post None.
++     *
++     * @test Test Cases:
++     *  <Test Case Description paragraph>
++     *
++     * @todo TO DOs:
++     *  # Populate the test case section.
++     *
++     * @note NOTES:
++     *  # None
++     */
++    virtual void Unregister(uint32_t i_commandID);
++
++    /**
++     * @brief IpmiCommandTable::getInstance : Get instance of the IpmiCommandTable
++     *        class
++     *
++     * @par Detailed Description:
++     *  This static method returns the singleton reference to the IpmiCommandTable
++     *  class.
++     */
++    static IpmiCommandTable& getInstance();
++
++    /**
++     * @brief IpmiCommandTable::ExecuteCommand : Execute the requested command
++     *
++     * @par Detailed Description:
++     *  Execute the requested command. Commands are expected to get input from
++     *  SessionControl object and are expected to populate the output in the
++     *  SessionControl object.
++     *
++     * @param (uint32_t) i_commandID: Command ID to execute.
++     * @param (IpmiSessionControl_t) io_sessCtrl: Session Control required for
++     *                                            executing the command.
++     *
++     * @retval None.
++     *
++     * @pre None.
++     *
++     * @post None.
++     *
++     * @test Test Cases:
++     *  <Test Case Description paragraph>
++     *
++     * @todo TO DOs:
++     *  # Populate the test case section.
++     *
++     * @note NOTES:
++     *  # None
++     */
++    virtual void ExecuteCommand(uint32_t i_commandID,
++                                IpmiMessageHandler& io_sessCtrl);
++
++    virtual ~IpmiCommandTable();
++
++protected:
++
++    /**
++     * @brief IpmiCommandTable::IpmiCommandTable : (Disabled) Default CTOR
++     *
++     * @par Detailed Description:
++     *  Default CTOR, does nothing.
++     */
++    IpmiCommandTable();
++
++private:
++    IpmiCommandTableMap_t iv_cmdTblMap;
++    std::mutex iv_cmdTblMapMutex;
++};
++
++#endif /* IPMICOMMANDTABLE_H_ */
+diff --git a/main.cpp b/main.cpp
+new file mode 100644
+index 0000000..33a3b5a
+--- /dev/null
++++ b/main.cpp
+@@ -0,0 +1,151 @@
++#include "main.hpp"
++#include <assert.h>
++#include <dlfcn.h>
++#include <dirent.h>
++#include <unistd.h>
++
++#include <iostream>
++#include <tuple>
++
++#include <systemd/sd-bus.h>
++#include <systemd/sd-daemon.h>
++#include <systemd/sd-event.h>
++
++#include "comm_module.hpp"
++#include "command_table.hpp"
++#include "message.hpp"
++#include "message_handler.hpp"
++#include "sessions_manager.hpp"
++#include "socket_channel.hpp"
++
++session::Manager manager;
++command::Table table;
++std::tuple<session::Manager&, command::Table&> singletonPool(manager, table);
++
++static int io_handler(sd_event_source* es, int fd, uint32_t revents,
++                      void* userdata)
++{
++    std::shared_ptr<udpsocket::Channel> channelPtr;
++    struct timeval timeout;
++    timeout.tv_sec = SELECT_CALL_TIMEOUT;
++    timeout.tv_usec = 0;
++
++    channelPtr.reset(new udpsocket::Channel(fd, timeout));
++
++    // Initialize the Message Handler with the socket channel
++    message::Handler msgHandler(channelPtr);
++
++    // Read the incoming IPMI packet
++    auto inMessage = msgHandler.receive();
++
++    if (inMessage != nullptr)
++    {
++        // Execute the Command
++        auto outMessage = msgHandler.executeCommand(inMessage.get());
++
++        if (outMessage != nullptr)
++        {
++            // Send the response IPMI Message
++            msgHandler.send(outMessage.get());
++        }
++        else
++        {
++            std::cerr << "Execution of IPMI command failed\n";
++        }
++    }
++    else
++    {
++        std::cerr << "Reading & Parsing the incoming message failed\n";
++    }
++
++    return 0;
++}
++
++int main(int i_argc, char* i_argv[])
++{
++    struct sockaddr_in in {};
++
++    sd_event_source* event_source = nullptr;
++    sd_event* event = nullptr;
++    int fd = -1, r;
++    sigset_t ss;
++
++    r = sd_event_default(&event);
++    if (r < 0)
++    {
++        goto finish;
++    }
++
++    if (sigemptyset(&ss) < 0 || sigaddset(&ss, SIGTERM) < 0 ||
++        sigaddset(&ss, SIGINT) < 0)
++    {
++        r = -errno;
++        goto finish;
++    }
++
++    /* Block SIGTERM first, so that the event loop can handle it */
++    if (sigprocmask(SIG_BLOCK, &ss, NULL) < 0)
++    {
++        r = -errno;
++        goto finish;
++    }
++
++    /* Let's make use of the default handler and "floating" reference features of sd_event_add_signal() */
++    r = sd_event_add_signal(event, NULL, SIGTERM, NULL, NULL);
++    if (r < 0)
++    {
++        goto finish;
++    }
++
++    r = sd_event_add_signal(event, NULL, SIGINT, NULL, NULL);
++    if (r < 0)
++    {
++        goto finish;
++    }
++
++    fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
++    if (fd < 0)
++    {
++        r = -errno;
++        goto finish;
++    }
++
++    in.sin_family = AF_INET;
++    in.sin_port = htons(623);
++
++    if (bind(fd, (struct sockaddr*)&in, sizeof(in)) < 0)
++    {
++        r = -errno;
++        goto finish;
++    }
++
++    r = sd_event_add_io(event, &event_source, fd, EPOLLIN, io_handler, NULL);
++    if (r < 0)
++    {
++        goto finish;
++    }
++
++    // Register the phosphor-net-ipmid commands
++    sessionSetupCommands();
++
++    r = sd_event_loop(event);
++
++finish:
++    event_source = sd_event_source_unref(event_source);
++    event = sd_event_unref(event);
++
++    if (fd >= 0)
++    {
++        (void) close(fd);
++    }
++
++    if (r < 0)
++    {
++        fprintf(stderr, "Failure: %s\n", strerror(-r));
++    }
++
++    return r < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
++
++    //We will never get here .. but in case we do .. return 0 to OS.
++    return 0;
++}
+diff --git a/main.hpp b/main.hpp
+new file mode 100644
+index 0000000..2f4fb37
+--- /dev/null
++++ b/main.hpp
+@@ -0,0 +1,11 @@
++#pragma once
++
++#include <tuple>
++
++#include <command_table.hpp>
++#include <sessions_manager.hpp>
++
++extern std::tuple<session::Manager&, command::Table& > singletonPool;
++
++// Select call timeout is set arbitarily set to 30 sec
++static constexpr size_t SELECT_CALL_TIMEOUT = 30;
+diff --git a/message_handler.cpp b/message_handler.cpp
+new file mode 100644
+index 0000000..79b011f
+--- /dev/null
++++ b/message_handler.cpp
+@@ -0,0 +1,196 @@
++#include "message_handler.hpp"
++
++#include <sys/socket.h>
++
++#include <iostream>
++#include <memory>
++#include <string>
++#include <vector>
++
++#include "command_table.hpp"
++#include "message_parsers.hpp"
++#include "sessions_manager.hpp"
++#include "main.hpp"
++#include "message.hpp"
++
++namespace message
++{
++
++std::unique_ptr<Message> Handler::receive()
++{
++    std::vector<uint8_t> packet;
++    auto readStatus = 0;
++
++    // Read the packet
++    std::tie(readStatus, packet) = channel->read();
++
++    if (readStatus < 0)
++    {
++        std::cerr << "E> Error in Read : " << std::hex << readStatus << "\n";
++    }
++
++    // Unflatten the packet
++    auto message = Parser::unflatten(packet, sessionHeader);
++
++    if (message != nullptr)
++    {
++        auto session = std::get<session::Manager&>(singletonPool).getSession(
++                           message->bmcSessionID);
++        if (session == nullptr)
++        {
++            return nullptr;
++        }
++        else
++        {
++            sessionID = message->bmcSessionID;
++            message->rcSessionID = session->getRCSessionID();
++            session->updateLastTransactionTime();
++        }
++
++        return std::move(message);
++    }
++    else
++    {
++        return nullptr;
++    }
++    std::cout << "<<Handler::receive\n";
++}
++
++std::unique_ptr<Message> Handler::executeCommand(
++    Message* inMessage)
++{
++
++    // Get the CommandID to map into the command table
++    auto command = getCommand(inMessage);
++
++    auto inPayload(inMessage->payload);
++
++    // If the payload type is IPMI then remove the IPMI LAN Message header and
++    // trailer from the message payload
++    if (inMessage->payloadType == PayloadType::IPMI)
++    {
++        inMessage->payload.erase(inMessage->payload.begin(),
++                                 inMessage->payload.begin() +
++                                 sizeof(LAN::header::Request));
++        inMessage->payload.erase(inMessage->payload.end() - sizeof(
++                                     LAN::trailer::Response),
++                                 inMessage->payload.end());
++    }
++
++    auto output = std::get<command::Table&>(singletonPool).executeCommand(
++                      command,
++                      inMessage->payload,
++                      *this);
++
++    auto outMessage = std::make_unique<Message>();
++    outMessage->rcSessionID = inMessage->rcSessionID;
++
++    if (inMessage->payloadType == PayloadType::IPMI)
++    {
++        outMessage->payloadType = PayloadType::IPMI;
++
++        outMessage->payload.resize(sizeof(LAN::header::Response) +
++                                   output.size()
++                                   +
++                                   sizeof(LAN::trailer::Response));
++
++        auto reqHeader = reinterpret_cast<LAN::header::Request*>
++                         (inPayload.data());
++        auto respHeader = reinterpret_cast<LAN::header::Response*>
++                          (outMessage->payload.data());
++
++        // Add IPMI LAN Message Response Header
++        respHeader->rqaddr = reqHeader->rqaddr;
++        respHeader->netfn  = reqHeader->netfn | 0x04;
++        respHeader->cs     = ipmiCrc8bit(&(respHeader->rqaddr), 2);
++        respHeader->rsaddr = reqHeader->rsaddr;
++        respHeader->rqseq  = reqHeader->rqseq;
++        respHeader->cmd    = reqHeader->cmd;
++
++        auto assembledSize = sizeof(LAN::header::Response);
++
++        // Copy the output by the execution of the command
++        std::copy(output.begin(), output.end(),
++                  outMessage->payload.begin() + assembledSize);
++        assembledSize += output.size();
++
++        // Add the IPMI LAN Message Trailer
++        auto trailer = reinterpret_cast<LAN::trailer::Response*>
++                       (outMessage->payload.data() + assembledSize);
++        trailer->checksum = ipmiCrc8bit(&respHeader->rsaddr, assembledSize - 3);
++
++    }
++    else if (inMessage->payloadType == PayloadType::OPEN_SESSION_REQUEST)
++    {
++        outMessage->payloadType = PayloadType::OPEN_SESSION_RESPONSE;
++        outMessage->payload.resize(output.size());
++        std::copy(output.begin(), output.end(), outMessage->payload.begin());
++    }
++    else if (inMessage->payloadType == PayloadType::RAKP1)
++    {
++        outMessage->payloadType = PayloadType::RAKP2;
++        outMessage->payload.resize(output.size());
++        std::copy(output.begin(), output.end(), outMessage->payload.begin());
++    }
++    else if (inMessage->payloadType == PayloadType::RAKP3)
++    {
++        outMessage->payloadType = PayloadType::RAKP4;
++        outMessage->payload.resize(output.size());
++        std::copy(output.begin(), output.end(), outMessage->payload.begin());
++    }
++
++    return std::move(outMessage);
++}
++
++uint32_t Handler::getCommand(Message* message)
++{
++    uint32_t command = 0 ;
++
++    if (message)
++    {
++        command |= (0 << 24);
++        command |= (static_cast<uint8_t>(message->payloadType) << 16);
++        if (message->payloadType == PayloadType::IPMI)
++        {
++            command |= ((reinterpret_cast<LAN::header::Request*>
++                         (message->payload.data()))->netfn) << 8;
++            command |= (reinterpret_cast<LAN::header::Request*>
++                        (message->payload.data()))->cmd;
++        }
++    }
++
++    return command;
++}
++
++int Handler::send(Message* outMessage)
++{
++    // Flatten the packet
++    auto packet = Parser::flatten(outMessage, sessionHeader);
++
++    // Read the packet
++    auto writeStatus = channel->write(packet);
++    if (writeStatus < 0)
++    {
++        std::cerr << "E> Error in writing : " << std::hex << writeStatus
++                  << "\n";
++    }
++
++    return writeStatus;
++}
++
++uint8_t Handler::ipmiCrc8bit(const uint8_t* ptr, const int len)
++{
++    uint8_t csum = 0;
++    auto inc = 0;
++
++    while (inc != len)
++    {
++        csum += *(ptr + inc);
++        inc++;
++    }
++
++    return 0x100 - csum;
++}
++
++} //namespace message
++
+diff --git a/message_handler.hpp b/message_handler.hpp
+new file mode 100644
+index 0000000..44d9c65
+--- /dev/null
++++ b/message_handler.hpp
+@@ -0,0 +1,100 @@
++#pragma once
++
++#include "message.hpp"
++#include "message_parsers.hpp"
++#include "session.hpp"
++
++namespace message
++{
++
++class Handler
++{
++    public:
++
++        Handler(std::shared_ptr<udpsocket::Channel> channel):
++            channel(channel) {}
++
++        Handler() = delete;
++        ~Handler() = default;
++        Handler(const Handler&) = delete;
++        Handler& operator=(const Handler&) = delete;
++        Handler(Handler&&) = delete;
++        Handler& operator=(Handler&&) = delete;
++
++        /*
++         * @brief Receive the IPMI packet
++         *
++         * Read the data on the socket, get the parser based on the Session
++         * header type and flatten the payload and generate the IPMI message
++         *
++         * @return IPMI Message on success and nullptr on failure
++         *
++         */
++        std::unique_ptr<Message> receive();
++
++        /*
++         * @brief Process the incoming IPMI message
++         *
++         * The incoming message payload is handled and the command handler for
++         * the Network function and Command is executed and the response message
++         * is returned
++         *
++         * @param [in] Incoming Message
++         *
++         * @return Outgoing message on success and nullptr on failure
++         */
++        std::unique_ptr<Message> executeCommand(Message* inMessage);
++
++        /*
++         * @brief Send the outgoing message
++         *
++         * The payload in the outgoing message is flattened and sent out on the
++         * socket
++         *
++         * @param [in] Outgoing Message
++         *
++         * @return Zero on success and non-zero on failure
++         */
++        int send(Message* outMessage);
++
++        auto getChannel()
++        {
++            return channel;
++        }
++
++        auto getSessionID()
++        {
++            return sessionID;
++        }
++
++    private:
++
++        // Socket channel for communicating with the remote client
++        std::shared_ptr<udpsocket::Channel> channel;
++
++        // BMC Session ID for the Channel
++        uint32_t sessionID;
++
++        // IPMI 1.5 or IPMI 2.0 Session Header
++        Parser::SessionHeader sessionHeader;
++
++        /*
++         * @brief Extract the command from the IPMI payload
++         */
++        uint32_t getCommand(Message* message);
++
++        /*
++         * @brief Calculate 8 bit 2's complement checksum
++         *
++         * Initialize checksum to 0. For each byte, checksum = (checksum + byte)
++         * modulo 256. Then checksum = - checksum. When the checksum and the
++         * bytes are added together, modulo 256, the result should be 0.
++         */
++
++        uint8_t ipmiCrc8bit(const uint8_t* ptr, const int len);
++};
++
++} //namespace message
++
++
++
+diff --git a/message_parsers.cpp b/message_parsers.cpp
+new file mode 100644
+index 0000000..2c151e9
+--- /dev/null
++++ b/message_parsers.cpp
+@@ -0,0 +1,234 @@
++#include "message_parsers.hpp"
++
++#include <iostream>
++#include <memory>
++
++#include "endian.hpp"
++#include "main.hpp"
++#include "message.hpp"
++#include "sessions_manager.hpp"
++
++namespace message
++{
++
++std::unique_ptr<Message> Parser::unflatten(
++    std::vector<uint8_t>& inPacket,
++    SessionHeader& authType)
++{
++    auto rmcpHeaderPtr = reinterpret_cast<BasicHeader_t*>(inPacket.data());
++
++    // Check if the packet has atleast the size of the RMCP Header
++    if (inPacket.size() < sizeof(BasicHeader_t))
++    {
++        return nullptr;
++    }
++
++    // Verify if the fields in the RMCP header conforms to the specification
++    if ((rmcpHeaderPtr->version != RMCP_VERSION) ||
++        (rmcpHeaderPtr->rmcpSeqNum != RMCP_SEQ) ||
++        (rmcpHeaderPtr->classOfMsg != RMCP_MESSAGE_CLASS_IPMI))
++    {
++        return nullptr;
++    }
++
++    // Read the Session Header and invoke the parser corresponding to the
++    // header type
++    switch (static_cast<SessionHeader>(rmcpHeaderPtr->format.formatType))
++    {
++        case SessionHeader::IPMI15:
++        {
++            authType = SessionHeader::IPMI15;
++            return Ipmi15Parser::unflatten(inPacket);
++        }
++        case SessionHeader::IPMI20:
++        {
++            authType = SessionHeader::IPMI20;
++            return Ipmi20Parser::unflatten(inPacket);
++        }
++        default:
++        {
++            return nullptr;
++        }
++    }
++}
++
++std::vector<uint8_t> Parser::flatten(Message* outMessage,
++                                     SessionHeader authType)
++{
++    std::vector<uint8_t> blank;
++
++    // Call the flatten routine based on the header type
++    switch (authType)
++    {
++        case SessionHeader::IPMI15:
++        {
++            return Ipmi15Parser::flatten(outMessage);
++        }
++        case SessionHeader::IPMI20:
++        {
++            return Ipmi20Parser::flatten(outMessage);
++        }
++        default:
++        {
++            return blank;
++        }
++    }
++}
++
++std::unique_ptr<Message> Ipmi15Parser::unflatten(std::vector<uint8_t>& inPacket)
++{
++    auto message = std::make_unique<Message>();
++
++    // Check if the packet has atleast the Session Header
++    if (inPacket.size() < sizeof(SessionHeader_t))
++    {
++        return nullptr;
++    }
++
++    auto header = reinterpret_cast<SessionHeader_t*>(inPacket.data());
++
++    message->payloadType = PayloadType::IPMI;
++    message->bmcSessionID = endian::from_ipmi<uint32_t>(header->sessId);
++    message->sessionSeqNum = endian::from_ipmi<uint32_t>(header->sessSeqNum);
++    message->isPacketEncrypted = false;
++    message->isPacketAuthenticated = false;
++
++    auto payloadLen = endian::from_ipmi<uint16_t>(header->payloadLength);
++
++    (message->payload).assign(inPacket.data() + sizeof(SessionHeader_t),
++                              inPacket.data() + sizeof(SessionHeader_t) +
++                              payloadLen);
++
++    return std::move(message);
++}
++
++std::vector<uint8_t> Ipmi15Parser::flatten(Message* outMessage)
++{
++    std::vector<uint8_t> packet;
++    packet.reserve(Parser::MESSAGE_MAX_PACKET_LENGTH);
++    packet.resize(sizeof(SessionHeader_t));
++
++    // Insert Session Header into the Packet
++    auto header = reinterpret_cast<SessionHeader_t*>(packet.data());
++    header->base.version = RMCP_VERSION;
++    header->base.reserved = 0x00;
++    header->base.rmcpSeqNum = RMCP_SEQ;
++    header->base.classOfMsg = RMCP_MESSAGE_CLASS_IPMI;
++    header->base.format.formatType =
++        static_cast<uint8_t>(SessionHeader::IPMI15);
++    header->sessSeqNum = 0;
++    header->sessId = endian::to_ipmi<uint32_t>(outMessage->rcSessionID);
++
++    header->payloadLength = static_cast<uint8_t>(outMessage->payload.size());
++
++    // Insert the Payload into the Packet
++    packet.insert(packet.end(), outMessage->payload.begin(),
++                  outMessage->payload.end());
++
++    // Insert the Session Trailer
++    auto trailer = reinterpret_cast<SessionTrailer_t*>(packet.data() +
++                   packet.size());
++    trailer->legacyPad = 0x00;
++    packet.resize(packet.size() + sizeof(SessionTrailer_t));
++
++    std::cout << "I> Ipmi15Parser::flatten Packet Size " << packet.size()
++              << "\n";
++
++    return packet;
++}
++
++std::unique_ptr<Message> Ipmi20Parser::unflatten(std::vector<uint8_t>& inPacket)
++{
++    auto message = std::make_unique<Message>();
++
++    // Check if the packet has atleast the Session Header
++    if (inPacket.size() < sizeof(SessionHeader_t))
++    {
++        return nullptr;
++    }
++
++    auto header = reinterpret_cast<SessionHeader_t*>(inPacket.data());
++
++    message->payloadType = static_cast<PayloadType>
++                           (header->payloadType & 0x3F);
++    message->bmcSessionID = endian::from_ipmi<uint32_t>(header->sessId);
++    message->sessionSeqNum = endian::from_ipmi<uint32_t>(header->sessSeqNum);
++    message->isPacketEncrypted =
++        ((header->payloadType & PAYLOAD_ENCRYPT_MASK) ? true : false);
++    message->isPacketAuthenticated =
++        ((header->payloadType & PAYLOAD_AUTH_MASK) ? true : false);
++
++    auto payloadLen = endian::from_ipmi<uint16_t>(header->payloadLength);
++    message->payload.assign(inPacket.begin() + sizeof(SessionHeader_t),
++                            inPacket.begin() + sizeof(SessionHeader_t) +
++                            payloadLen);
++
++    return std::move(message);
++}
++
++std::vector<uint8_t> Ipmi20Parser::flatten(Message* outMessage)
++{
++    auto returnCode = false;
++
++    std::vector<uint8_t> packet;
++    packet.reserve(Parser::MESSAGE_MAX_PACKET_LENGTH);
++    packet.resize(sizeof(SessionHeader_t));
++
++    SessionHeader_t* header = reinterpret_cast<SessionHeader_t*>(packet.data());
++    header->base.version = RMCP_VERSION;
++    header->base.reserved = 0x00;
++    header->base.rmcpSeqNum = RMCP_SEQ;
++    header->base.classOfMsg = RMCP_MESSAGE_CLASS_IPMI;
++    header->base.format.formatType =
++        static_cast<uint8_t>(SessionHeader::IPMI20);
++    header->payloadType = static_cast<uint8_t>(outMessage->payloadType);
++    header->sessId = endian::to_ipmi<uint32_t>(outMessage->rcSessionID);
++
++    // Add session sequence number
++    returnCode = addSequenceNumber(packet);
++    if (returnCode == false)
++    {
++        std::cerr << "Adding Sequence Number failed";
++    }
++
++    // Add Payload
++    header->payloadLength =
++        endian::to_ipmi<uint16_t>(outMessage->payload.size());
++    // Insert the Payload into the Packet
++    packet.insert(packet.end(), outMessage->payload.begin(),
++                  outMessage->payload.end());
++
++    std::cout << "I> Ipmi20Parser::flatten Packet Size = " << packet.size()
++              << "\n";
++
++    return packet;
++}
++
++bool Ipmi20Parser::addSequenceNumber(std::vector<uint8_t>& packet)
++{
++    auto status = false;
++
++    SessionHeader_t* header = reinterpret_cast<SessionHeader_t*>(packet.data());
++
++    if (header->sessId == session::SESSION_ZERO)
++    {
++        header->sessSeqNum = 0x00;
++        status = true;
++    }
++    else
++    {
++        auto session = std::get<session::Manager&>(singletonPool).getSession(
++                           endian::from_ipmi<uint32_t>(header->sessId),
++                           session::RetrieveOption::
++                           RETRIEVE_OPTION_RC_SESSION_ID);
++        if (session)
++        {
++            auto seqNum = session->sequenceNums.increment();
++            header->sessSeqNum = endian::to_ipmi<uint32_t>(seqNum);
++            status = true;
++        }
++    }
++    return status;
++}
++
++} // namespace message
+diff --git a/message_parsers.hpp b/message_parsers.hpp
+new file mode 100644
+index 0000000..468ecb9
+--- /dev/null
++++ b/message_parsers.hpp
+@@ -0,0 +1,163 @@
++#pragma once
++
++#include "message.hpp"
++
++namespace message
++{
++
++/*
++ * @class Parser
++ *
++ * Parser is the base class for IPMI message parsers.There are two types of
++ * IPMI session headers IPMI1.5 header and IPMI2.0 header
++ */
++class Parser
++{
++    public:
++        static constexpr size_t RMCP_VERSION = 6;
++
++        // RMCP Messages with class=IPMI should be sent with an RMCP Sequence
++        // Number of FFh to indicate that an RMCP ACK message should not be
++        // generated by the message receiver.
++        static constexpr size_t RMCP_SEQ = 0xFF;
++
++        // RMCP Message Class 7h is for IPMI
++        static constexpr size_t RMCP_MESSAGE_CLASS_IPMI = 7;
++
++        enum class SessionHeader
++        {
++            IPMI15 = 0x00,
++            IPMI20 = 0x06,
++        };
++
++        struct BasicHeader_t
++        {
++            // RMCP Header
++            uint8_t version;
++            uint8_t reserved;
++            uint8_t rmcpSeqNum;
++            uint8_t classOfMsg;
++
++            // IPMI partial session header
++            union
++            {
++                uint8_t reserved1: 4;
++                uint8_t authType: 4;
++                uint8_t formatType;
++            } format;
++        } __attribute__((packed));
++
++        Parser() = delete;
++        ~Parser() = delete;
++        Parser(const Parser&) = delete;
++        Parser& operator=(const Parser&) = delete;
++        Parser(Parser&&) = delete;
++        Parser& operator=(Parser&&) = delete;
++
++        /*
++         * @brief Unflatten an incoming packet and prepare the IPMI message
++         *
++         * @param [in] Incoming IPMI packet
++         * @param [out] Session header type in the packet is passed to the
++         *              Message handler to sent response packet
++         *
++         * @return IPMI message in the packet on success
++         */
++        static std::unique_ptr<Message> unflatten(
++            std::vector<uint8_t>& inPacket, SessionHeader& authType);
++
++        /*
++         * @brief Flatten an IPMI message and generate the IPMI packet with the
++         *        session header
++         *
++         * @param [in] IPMI message to be flattened
++         * @param [in] Session header type to be added to the IPMI packet
++         *
++         * @return IPMI packet on success
++         */
++        static std::vector<uint8_t> flatten(Message* outMessage,
++                                            SessionHeader authType);
++
++        // Maximum packet size that we'll handle
++        static constexpr uint32_t MESSAGE_MAX_PACKET_LENGTH = 512;
++};
++
++class Ipmi15Parser : public Parser
++{
++    public:
++        struct SessionHeader_t
++        {
++            struct BasicHeader_t base;
++            uint32_t sessSeqNum;
++            uint32_t sessId;
++            // <Optional Field: AuthCode>
++            uint8_t payloadLength;
++        } __attribute__((packed));
++
++        struct SessionTrailer_t
++        {
++            uint8_t legacyPad;
++        } __attribute__((packed));
++
++
++        Ipmi15Parser() = delete;
++        ~Ipmi15Parser() = delete;
++        Ipmi15Parser(const Ipmi15Parser&) = delete;
++        Ipmi15Parser& operator=(const Ipmi15Parser&) = delete;
++        Ipmi15Parser(Ipmi15Parser&&) = delete;
++        Ipmi15Parser& operator=(Ipmi15Parser&&) = delete;
++
++        static std::unique_ptr<Message> unflatten(
++            std::vector<uint8_t>& inPacket);
++
++        static std::vector<uint8_t> flatten(Message* outMessage);
++};
++
++class Ipmi20Parser : public Parser
++{
++    public:
++        static constexpr size_t MAX_INTEGRITY_DATA_LENGTH = 12;
++        static constexpr size_t PAYLOAD_ENCRYPT_MASK = 0x80;
++        static constexpr size_t PAYLOAD_AUTH_MASK = 0x40;
++
++        struct SessionHeader_t
++        {
++            struct BasicHeader_t base;
++
++            uint8_t payloadType;
++
++            uint32_t sessId;
++            uint32_t sessSeqNum;
++            uint16_t payloadLength;
++        } __attribute__((packed));
++
++        struct SessionTrailer_t
++        {
++            // Integrity Pad
++            uint8_t padLength;
++            uint8_t nextHeader;
++            // AuthCode (Integrity Data)
++            uint8_t authCode[MAX_INTEGRITY_DATA_LENGTH];
++        } __attribute__((packed));
++
++        Ipmi20Parser() = delete;
++        ~Ipmi20Parser() = delete;
++        Ipmi20Parser(const Ipmi20Parser&) = delete;
++        Ipmi20Parser& operator=(const Ipmi20Parser&) = delete;
++        Ipmi20Parser(Ipmi20Parser&&) = delete;
++        Ipmi20Parser& operator=(Ipmi20Parser&&) = delete;
++
++        static std::unique_ptr<Message> unflatten(
++            std::vector<uint8_t>& inPacket);
++
++        static std::vector<uint8_t> flatten(Message* outMessage);
++
++    protected:
++        /*
++         * @brief Add sequence number to the message
++         *
++         */
++        static bool addSequenceNumber(std::vector<uint8_t>& packet);
++};
++
++} // namespace message
+diff --git a/session.cpp b/session.cpp
+new file mode 100644
+index 0000000..5a2e546
+--- /dev/null
++++ b/session.cpp
+@@ -0,0 +1,47 @@
++#include "session.hpp"
++
++#include <ctime>
++
++#include "endian.hpp"
++
++namespace session
++{
++
++Session::Session(uint32_t inRemoteConsoleSessID, Privilege priv)
++{
++    remoteConsoleSessionID = endian::from_ipmi<uint32_t>(inRemoteConsoleSessID);
++    bmcSessionID = std::rand();
++    curPrivLevel = priv;
++    state = State::INACTIVE;
++}
++
++bool Session::isSessionActive()
++{
++    auto isActive = false;
++    auto currentTime = std::chrono::steady_clock::now();
++    auto elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>
++                          (currentTime - lastTime);
++
++    switch (state)
++    {
++        case State::SETUP_IN_PROGRESS:
++            if (elapsedSeconds < SESSION_SETUP_TIMEOUT)
++            {
++                isActive = true;
++            }
++            break;
++        case State::ACTIVE:
++            if (elapsedSeconds < SESSION_INACTIVITY_TIMEOUT)
++            {
++                isActive = true;
++            }
++            break;
++        default:
++            isActive = false;
++            break;
++    }
++
++    return isActive;
++}
++
++} // namespace session
+diff --git a/session.hpp b/session.hpp
+new file mode 100644
+index 0000000..ca18cec
+--- /dev/null
++++ b/session.hpp
+@@ -0,0 +1,170 @@
++#pragma once
++
++#include <chrono>
++#include <list>
++#include <memory>
++#include <string>
++#include <vector>
++
++#include "auth_algo.hpp"
++#include "socket_channel.hpp"
++
++using namespace std::chrono_literals;
++
++namespace session
++{
++
++enum class Privilege : uint8_t
++{
++    PRIVILEGE_HIGHEST_MATCHING = 0x00,
++    PRIVILEGE_CALLBACK         = 0x01,
++    PRIVILEGE_USER             = 0x02,
++    PRIVILEGE_OPERATOR         = 0x03,
++    PRIVILEGE_ADMIN            = 0x04,
++    PRIVILEGE_OEM              = 0x05,
++};
++
++enum class State
++{
++    INACTIVE,             // Session is not in use
++    SETUP_IN_PROGRESS,    // Session Setup Sequence is progressing
++    ACTIVE,               // Session is active
++    TEAR_DOWN_IN_PROGRESS,// When Closing Session
++};
++
++// Seconds of inactivity allowed during session setup stage
++constexpr auto SESSION_SETUP_TIMEOUT = 5s;
++// Seconds of inactivity allowed when session is active
++constexpr auto SESSION_INACTIVITY_TIMEOUT = 60s;
++
++/*
++ * @struct SequenceNumbers Session Sequence Numbers
++ *
++ * IPMI v2.0 RMCP+ Session Sequence Numbers are used for rejecting packets that
++ * may have beenduplicated by the network or intentionally replayed. There are
++ * two sets of Session SequenceNumbers for a given session.One set of inbound
++ * and outbound sequence numbers is used for authenticated (signed) packets,
++ * and the other set is used for unauthenticated packets.
++ *
++ * The individual Session Sequence Numbers is are initialized to zero whenever
++ * a session is created and incremented by one at the start of outbound
++ * processing for a given packet (i.e. the first transmitted packet has a ‘1’
++ * as the sequence number, not 0). Session Sequence numbers are incremented for
++ * every packet that is transmitted by a given sender, regardless of whether
++ * the payload for the packet is a ‘retry’ or not.
++ */
++struct SequenceNumbers
++{
++        auto get(bool inbound = true) const
++        {
++            return inbound ? in : out;
++        }
++
++        void set(uint32_t seqNumber, bool inbound = true)
++        {
++            inbound ? (in = seqNumber) : (out = seqNumber);
++        }
++
++        auto increment()
++        {
++            return ++out;
++        }
++
++    private:
++        uint32_t in;
++        uint32_t out;
++};
++/*
++ * @class Session
++ *
++ * Encapsulates the data related to an IPMI Session
++ *
++ * Authenticated IPMI communication to the BMC is accomplished by establishing
++ * a session. Once established, a session is identified by a Session ID. The
++ * Session ID may be thought of as a handle that identifies a connection between
++ * a given remote user and the BMC. The specification supports having multiple
++ * active sessions established with the BMC. It is recommended that a BMC
++ * implementation support at least four simultaneous sessions
++ */
++
++class Session
++{
++    public:
++
++        Session() = default;
++        ~Session() = default;
++        Session(const Session&) = default;
++        Session& operator=(const Session&) = default;
++        Session(Session&&) = default;
++        Session& operator=(Session&&) = default;
++
++        /*
++         * @brief Session Constructor
++         *
++         * This is issued by the Session Manager when a session is started for
++         * the Open SessionRequest command
++         *
++         * @param [in] Remote Console Session ID
++         * @param [in] Privilege Level requested in the Command
++         */
++        Session(uint32_t inRemoteConsoleSessID, Privilege priv);
++
++        auto getBMCSessionID() const
++        {
++            return bmcSessionID;
++        }
++
++        auto getRCSessionID() const
++        {
++            return remoteConsoleSessionID;
++        }
++
++        auto getAuthAlgo() const
++        {
++            return authAlgoInterface.get();
++        }
++
++        void setAuthAlgo(std::unique_ptr<cipher::rakp_auth::Interface>&&
++                         inAuthAlgo)
++        {
++            authAlgoInterface = std::move(inAuthAlgo);
++        }
++
++        auto& getSeqNumber()
++        {
++            return sequenceNums;
++        }
++
++        void updateLastTransactionTime()
++        {
++            lastTime = std::chrono::steady_clock::now();
++        }
++
++        /*
++         * @brief Session Active Status
++         *
++         * Session Active status is decided upon the Session State and the last
++         * transaction time is compared against the session inactivity timeout.
++         *
++         */
++        bool isSessionActive();
++
++        Privilege curPrivLevel; // Session's Current Privilege Level
++        Privilege maxPrivLevel; // Session's Maximum Privilege Level
++        SequenceNumbers sequenceNums; // Session Sequence Numbers
++        State state; // Session State
++        std::vector<char> userName; // User Name
++
++    private:
++
++        uint32_t bmcSessionID; //BMC Session ID
++        uint32_t remoteConsoleSessionID; //Remote Console Session ID
++
++        // Authentication Algorithm Interface for the Session
++        std::unique_ptr<cipher::rakp_auth::Interface> authAlgoInterface;
++
++        // Last Transaction Time
++        decltype(std::chrono::steady_clock::now()) lastTime;
++};
++
++} // namespace session
+diff --git a/sessions_manager.cpp b/sessions_manager.cpp
+new file mode 100644
+index 0000000..ef8a980
+--- /dev/null
++++ b/sessions_manager.cpp
+@@ -0,0 +1,143 @@
++#include "sessions_manager.hpp"
++
++#include <cstdlib>
++#include <iomanip>
++#include <iostream>
++#include <memory>
++
++#include "session.hpp"
++
++namespace session
++{
++
++Manager::Manager()
++{
++    sessionsMap[0] = std::make_unique<Session>();
++    // Seeding the pseudo-random generator
++    std::srand(std::time(0));
++}
++
++Session* Manager::startSession(uint32_t remoteConsoleSessID,
++                               Privilege priv,
++                               uint8_t authAlgo,
++                               uint8_t intgAlgo,
++                               uint8_t confAlgo)
++{
++    std::unique_ptr<Session> session;
++    uint32_t sessionID = 0;
++    auto activeSessions = sessionsMap.size() - MAX_SESSIONLESS_COUNT;
++    cleanStaleEntries();
++
++    if (activeSessions < MAX_SESSION_COUNT)
++    {
++        do
++        {
++
++            session = std::make_unique<Session>(remoteConsoleSessID, priv);
++
++            if (getSession(session->getBMCSessionID()))
++            {
++                //Detected BMC Session ID collisions
++                session.reset();
++                continue;
++            }
++            else
++            {
++                break;
++            }
++        }
++        while (1);
++
++        // Set the Authentication Algorithm to RAKP_HMAC_SHA1
++        switch (authAlgo)
++        {
++            case static_cast<int>(cipher::rakp_auth::Algorithms::RAKP_HMAC_SHA1):
++            {
++                session->setAuthAlgo(std::make_unique<cipher::rakp_auth::AlgoSHA1>());
++                break;
++            }
++            default:
++                authAlgo = static_cast<uint8_t>
++                           (cipher::rakp_auth::Algorithms::RAKP_HMAC_INVALID);
++        }
++
++        sessionID = session->getBMCSessionID();
++        sessionsMap[sessionID] = std::move(session);
++    }
++    else
++    {
++        std::cerr << "E> No free sessions left: Active: " << activeSessions <<
++                  " Allowed: " <<
++                  MAX_SESSION_COUNT << "\n";
++
++        for (const auto& iterator : sessionsMap)
++        {
++            std::cerr << "E> Active Session: 0x" << std::hex
++                      << std::setfill('0') << std::setw(8)
++                      << (iterator.second)->getBMCSessionID() << "\n";
++        }
++    }
++
++    return getSession(sessionID);
++}
++
++void Manager::stopSession(uint32_t bmcSessionID)
++{
++    auto session = getSession(bmcSessionID);
++
++    // If the session is valid and not session zero
++    if (session && (bmcSessionID != SESSION_ZERO))
++    {
++        session->state = State::TEAR_DOWN_IN_PROGRESS;
++    }
++}
++
++Session* Manager::getSession(uint32_t sessionID, RetrieveOption option)
++{
++    Session* session = nullptr;
++
++    switch (option)
++    {
++        case RetrieveOption::RETRIEVE_OPTION_BMC_SESSION_ID:
++        {
++            auto iterator = sessionsMap.find(sessionID);
++            if (iterator != sessionsMap.end())
++            {
++                session = (iterator->second).get();
++            }
++            break;
++        }
++        case RetrieveOption::RETRIEVE_OPTION_RC_SESSION_ID:
++        {
++            for (const auto& iterator : sessionsMap)
++            {
++                if (sessionID == iterator.second->getRCSessionID())
++                {
++                    session = (iterator.second).get();
++                    break;
++                }
++            }
++            break;
++        }
++        default:
++            break;
++    }
++
++    return session;
++}
++
++void Manager::cleanStaleEntries()
++{
++    for (const auto& iterator : sessionsMap)
++    {
++        auto session = (iterator.second).get();
++
++        if ((session->getBMCSessionID() != SESSION_ZERO) &&
++            !(session->isSessionActive()))
++        {
++            sessionsMap.erase(session->getBMCSessionID());
++        }
++    }
++}
++
++} // namespace session
+diff --git a/sessions_manager.hpp b/sessions_manager.hpp
+new file mode 100644
+index 0000000..2f8857b
+--- /dev/null
++++ b/sessions_manager.hpp
+@@ -0,0 +1,89 @@
++#pragma once
++
++#include <map>
++#include <memory>
++#include <mutex>
++
++#include "session.hpp"
++
++namespace session
++{
++
++enum class RetrieveOption
++{
++    RETRIEVE_OPTION_BMC_SESSION_ID,
++    RETRIEVE_OPTION_RC_SESSION_ID,
++};
++
++constexpr size_t SESSION_ZERO = 0;
++constexpr size_t MAX_SESSIONLESS_COUNT = 1;
++constexpr size_t MAX_SESSION_COUNT = 5;
++
++/*
++ * @class Manager
++ *
++ * Manager class acts a manager for the IPMI sessions and provides interfaces
++ * to start a session, stop a session and get reference to the session objects.
++ *
++ */
++
++class Manager
++{
++    public:
++
++        // BMC Session ID is the key for the map
++        using SessionMap = std::map<uint32_t, std::unique_ptr<Session>>;
++
++        Manager();
++        ~Manager() = default;
++        Manager(const Manager&) = delete;
++        Manager& operator=(const Manager&) = delete;
++        Manager(Manager&&) = delete;
++        Manager& operator=(Manager&&) = delete;
++
++        /*
++         * @brief Start an IPMI session
++         *
++         * @param [in] Remote Console Session ID mentioned in the Open Session
++         *             Request Command
++         * @param [in] Privilege level requested
++         * @param [in] Authentication Algorithm
++         * @param [in] Integrity Algorithm
++         * @param [in] Confidentiality Algorithm
++         *
++         * @return session handle on success and nullptr on failure
++         *
++         */
++        Session* startSession(uint32_t remoteConsoleSessID,
++                              Privilege priv,
++                              uint8_t authAlgo,
++                              uint8_t intgAlgo,
++                              uint8_t confAlgo);
++
++        /*
++         * @brief Stop IPMI Session
++         *
++         * @param [in] BMC Session ID
++         *
++         */
++        void stopSession(uint32_t bmcSessionID);
++
++        /*
++         * @brief Get Session Handle
++         *
++         * @param [in] Session ID
++         * @param [in] Select between BMC Session ID and Remote Console Session
++         *             ID, Default option is BMC Session ID
++         *
++         * @return session handle on success and nullptr on failure
++         *
++         */
++        Session* getSession(uint32_t sessionID, RetrieveOption option =
++                                RetrieveOption::RETRIEVE_OPTION_BMC_SESSION_ID);
++
++    private:
++        SessionMap sessionsMap;
++        void cleanStaleEntries();
++};
++
++} // namespace session
