@@ -14,10 +14,10 @@
  
  #define CONFIG_ENV_OFFSET		0x60000	/* environment starts here  */
 -#define CONFIG_ENV_SIZE			0x20000	/* Total Size of Environment Sector */
-+#define CONFIG_ENV_SIZE			0x10000	/* Total Size of Environment Sector */
++#define CONFIG_ENV_SIZE			0x20000	/* Total Size of Environment Sector */
  
 -#define CONFIG_BOOTCOMMAND	"bootm 20080000 20300000"
-+#define CONFIG_BOOTCOMMAND	"mw.l 1e78502c 00000092 1; bootm 20080000 20300000 20070000"
++#define CONFIG_BOOTCOMMAND	"mw.l 1e78502c 00000092 1; bootm 20090000 20300000 20080000"
  #define CONFIG_ENV_OVERWRITE
  
  #define CONFIG_SKIP_LOWLEVEL_INIT 1
