@@ -1,0 +1,16 @@
+--- kernel-source/drivers/net/ethernet/faraday/ftgmac100.c.orig	2016-12-07 13:54:15.000000000 +0300
++++ kernel-source/drivers/net/ethernet/faraday/ftgmac100.c	2016-12-07 14:52:45.219258003 +0300
+@@ -1154,6 +1154,13 @@ static int ftgmac100_open(struct net_dev
+ 	if (err)
+ 		goto err_hw;
+ 
++	/* Follow Aspeed's reset sequnce to do SW reset twice with 10 us delay */
++	udelay(10);
++
++	err = ftgmac100_reset_hw(priv);
++	if (err)
++		goto err_hw;
++
+ 	ftgmac100_init_hw(priv);
+ 	ftgmac100_start_hw(priv, priv->use_ncsi ? 100 : 10);
+ 
