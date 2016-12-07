@@ -1,4 +1,5 @@
 FILESEXTRAPATHS_prepend := "${THISDIR}/linux-obmc:"
+
 ## SRC_URI += "file://001-aspeed-rmc-dtsi.patch"
 SRC_URI += "file://002-gb21-rmc.patch"
 SRC_URI += "file://003-i2c-aspeed-put-fix.patch"
@@ -20,10 +21,13 @@ SRC_URI += "file://018-b53-pseudo-phy-access-hack.patch"
 SRC_URI += "file://019-pmbus-of.patch"
 SRC_URI += "file://020-ipmi-i2c-mod.patch"
 SRC_URI += "file://021-i2c-driver-order.patch"
+SRC_URI += "file://022-ftgmac100-sw-reset.patch"
+
 SRC_URI += "file://080-b53-pvlan-hack.patch"
 ## SRC_URI += "file://081-delay-hack.patch"
 #SRC_URI += "file://083-fdt-dbg.patch"
 # SRC_URI += "file://084-b53-phy-dbg.patch"
+
 SRC_URI += "file://100-pantelis-v3-configfs-overlays.patch"
 SRC_URI += "file://101-raspberrypi-dtc.patch"
 SRC_URI += "file://102-dtc-remove-shipped.patch"
@@ -31,5 +35,6 @@ SRC_URI += "file://103-raspberrypi-of.patch"
 ## SRC_URI += "file://082-resolver-dbg.patch"
 ## SRC_URI += "file://006-ftgmac100-old-printk.patch"
 ## SRC_URI += "file://007-mach-aspeed-common.patch"
+
 SRC_URI += "file://shaosi.cfg"
 SRC_URI += "file://aspeed-shaosi-gb30.dts"
