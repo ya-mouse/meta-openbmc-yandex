@@ -1,10 +1,10 @@
 diff --git a/arch/arm/mach-aspeed/aspeed.c b/arch/arm/mach-aspeed/aspeed.c
 --- a/arch/arm/mach-aspeed/aspeed.c
 +++ b/arch/arm/mach-aspeed/aspeed.c
-@@ -218,6 +218,8 @@ static void __init aspeed_init_early(voi
- 		do_ast2500evb_setup();
- 	if (of_machine_is_compatible("ingrasys,zaius-bmc"))
+@@ -222,6 +222,8 @@ static void __init aspeed_init_early(voi
  		do_zaius_setup();
+ 	if (of_machine_is_compatible("ibm,witherspoon-bmc"))
+ 		do_witherspoon_setup();
 +	if (of_machine_is_compatible("openbmc,common"))
 +		do_common_setup();
  }
