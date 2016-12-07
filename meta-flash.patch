@@ -1,8 +1,8 @@
 diff --git a/meta-phosphor/classes/obmc-phosphor-image_types_uboot.bbclass b/meta-phosphor/classes/obmc-phosphor-image_types_uboot.bbclass
-index 01f91c0..657309a 100644
+index 01f91c0..a5c0222 100644
 --- a/meta-phosphor/classes/obmc-phosphor-image_types_uboot.bbclass
 +++ b/meta-phosphor/classes/obmc-phosphor-image_types_uboot.bbclass
-@@ -20,6 +20,7 @@ FLASH_IMAGE_LINK ?= "flash-${MACHINE}"
+@@ -20,7 +20,8 @@ FLASH_IMAGE_LINK ?= "flash-${MACHINE}"
  FLASH_KERNEL_IMAGETYPE ?= "cuImage"
  
  FLASH_UBOOT_OFFSET ?= "0"
@@ -11,6 +11,7 @@ index 01f91c0..657309a 100644
 +FLASH_KERNEL_OFFSET ?= "576"
  FLASH_INITRD_OFFSET ?= "3072"
  FLASH_ROFS_OFFSET ?= "4864"
+ FLASH_RWFS_OFFSET ?= "28672"
 @@ -56,6 +57,8 @@ do_generate_flash() {
         rwfs="rwfs.${OVERLAY_BASETYPE}"
         rofsimg=rofs.${IMAGE_BASETYPE}.cpio
