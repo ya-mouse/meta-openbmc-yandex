@@ -1,15 +1,22 @@
 --- git/drivers/net/ftgmac100.c.orig	2016-11-22 07:07:44.000000000 +0300
 +++ git/drivers/net/ftgmac100.c	2016-11-22 07:27:12.131940971 +0300
-@@ -457,7 +457,7 @@ static void ftgmac100_reset(struct eth_d
+@@ -457,7 +457,14 @@ static void ftgmac100_reset(struct eth_d
  	debug("%s()\n", __func__);
  
  	//Ryan modify
 -	__raw_writel(__raw_readl(&ftgmac100->maccr) | FTGMAC100_MACCR_SW_RST, &ftgmac100->maccr);
 +	__raw_writel(FTGMAC100_MACCR_SW_RST, &ftgmac100->maccr);
++
++	while (__raw_readl(&ftgmac100->maccr) & FTGMAC100_MACCR_SW_RST);
++
++	/* Follow Aspeed's note to do sw reset twice with 10 us delay */
++	udelay(10);
++
++	__raw_writel(FTGMAC100_MACCR_SW_RST, &ftgmac100->maccr);
  
  	while (__raw_readl(&ftgmac100->maccr) & FTGMAC100_MACCR_SW_RST);
  
-@@ -791,11 +791,11 @@ int ftgmac100_initialize(bd_t *bd)
+@@ -791,11 +798,11 @@ int ftgmac100_initialize(bd_t *bd)
  		miiphy_register(dev->name, ftgmac100_reg_read, ftgmac100_reg_write);
  #endif
  
