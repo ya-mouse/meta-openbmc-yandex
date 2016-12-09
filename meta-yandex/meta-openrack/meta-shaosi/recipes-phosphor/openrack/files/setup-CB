@@ -1,0 +1,32 @@
+#!/bin/sh -e
+
+wait4vid()
+{
+    local r=1
+    while ! ip link show eth1.$1 &>/dev/null && [ $r -lt 10 ]; do
+        sleep 1
+        r=$((r+1))
+    done
+}
+
+# For reference board set ip to 10.1.VID.1
+# For testing board set ip to 10.1.VID.10
+[ "$1" != "-s" ] || ip=1
+
+brctl addbr br0
+
+for i in `seq 7`; do
+    vid=$(printf "%d" $((100+i)))
+    ifname=lan$i
+    [ $i -ne 7 ] || ifname=uplink
+    brctl addif br0 $ifname
+    vconfig add eth1 $vid
+    bridge vlan del vid 1 dev $ifname
+    bridge vlan add vid $vid dev $ifname untagged pvid
+    wait4vid $vid
+    ifconfig eth1.$vid 10.1.$vid.${ip:-10} netmask 255.255.255.0
+    ifconfig $ifname 0.0.0.0 up
+done
+
+# For reference board start iperf server
+[ "$1" != "-s" ] || iperf -sD

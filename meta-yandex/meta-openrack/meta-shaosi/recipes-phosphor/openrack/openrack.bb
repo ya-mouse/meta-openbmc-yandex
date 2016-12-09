@@ -9,6 +9,7 @@ SRC_URI += "file://shaosi-CB.dtbo"
 SRC_URI += "file://shaosi-RMC.dtbo"
 SRC_URI += "file://b53tool.lua"
 SRC_URI += "file://miitool.lua"
+SRC_URI += "file://setup-CB"
 SRC_URI += "file://openrack.tar.gz"
 
 do_install() {
@@ -21,6 +22,8 @@ do_install() {
 
         rsync -a ${WORKDIR}/openrack/root/ ${D}/
         rsync -a ${WORKDIR}/openrack/tests/ ${D}/usr/share/openrack/tests/
+
+        install -m 0755 ${WORKDIR}/setup-CB ${D}/usr/share/openrack/setup-vlan-CB
 }
 
 FILES_${PN} += " /etc/overlays /etc/default /etc/systemd /usr/share/openrack /usr/sbin "
