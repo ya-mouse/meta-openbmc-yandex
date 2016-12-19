@@ -1,5 +1,6 @@
 FILESEXTRAPATHS_prepend := "${THISDIR}/linux-obmc:"
 
+SRC_URI += "file://ipmi_i2c.c"
 ## SRC_URI += "file://001-aspeed-rmc-dtsi.patch"
 SRC_URI += "file://002-gb21-rmc.patch"
 SRC_URI += "file://003-i2c-aspeed-put-fix.patch"
@@ -36,5 +37,12 @@ SRC_URI += "file://103-raspberrypi-of.patch"
 ## SRC_URI += "file://006-ftgmac100-old-printk.patch"
 ## SRC_URI += "file://007-mach-aspeed-common.patch"
 
+# SRC_URI += "file://085-ipmi-slave-addr.patch"
+SRC_URI += "file://086-ipmi-hacks.patch"
+
 SRC_URI += "file://shaosi.cfg"
 SRC_URI += "file://aspeed-shaosi-gb30.dts"
+
+do_patch_append() {
+	install -m 0644 ${WORKDIR}/ipmi_i2c.c ${STAGING_KERNEL_DIR}/drivers/char/ipmi/ipmi_i2c.c
+}
