@@ -1,0 +1,37 @@
+--- pyinventorymgr/inventory_items.py.orig	2016-12-07 13:54:06.000000000 +0300
++++ pyinventorymgr/inventory_items.py	2016-12-20 17:45:04.910432323 +0300
+@@ -73,6 +73,19 @@ def getVersion():
+                 version = version.strip('"')
+     return version
+ 
++def getMacs(devspec):
++    spec = devspec.split('@', 2)
++    path = '/sys/bus/i2c/devices/%s/eeprom' % spec[0]
++    if len(spec) == 1:
++        spec.append('0')
++    r = {}
++    with open(path, 'r') as f:
++        f.seek(int(spec[1]), 0)
++        while True:
++            kv = f.readline().rstrip('\n').split('=', 2)
++            if len(kv) != 2: break
++            r[kv[0]] = kv[1]
++    return r
+ 
+ if __name__ == '__main__':
+     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+@@ -106,9 +119,13 @@ if __name__ == '__main__':
+ 
+         ## TODO:  this is a hack to update bmc inventory item with version
+         ## should be done by flash object
+-        if (FRUS[f]['fru_type'] == "BMC"):
++        if (FRUS[f]['fru_type'] in ('BMC', 'CB', 'RMC')):
+             version = getVersion()
+             obj.update({'version': version})
++            if 'eeprom' in FRUS[f]:
++                try:
++                    obj.update(getMacs(FRUS[f]['eeprom']))
++                except: pass
+ 
+     obj_parent.unmask_signals()
+     name = dbus.service.BusName(DBUS_NAME, bus)
