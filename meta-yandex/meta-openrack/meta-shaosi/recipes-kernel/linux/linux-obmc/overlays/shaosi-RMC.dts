@@ -41,6 +41,11 @@
 		__overlay__ {
 			status = "okay";
 			clock-frequency = <100000>;
+			ipmb {
+				compatible = "i2c-ipmb";
+				reg = <0x31>;
+				slave-addr = <0x39>;
+			};
 		};
 	};
 
@@ -61,7 +66,7 @@
 				reg = <0x48>;
 			};
 			fru {
-				compatible = "atmel,24c02";
+				compatible = "atmel,24c256";
 				reg = <0x56>;
 				// pagesize = <32>;
 			};

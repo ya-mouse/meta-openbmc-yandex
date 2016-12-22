@@ -10,7 +10,7 @@
 	fragment@0 {
 		target-path = "/";
 		__overlay__ {
-			model = "Gigabyte Shaosi CB v3.0";
+			model = "Gigabyte Shaosi CB v3.0 DVT";
 		};
 	};
 
@@ -114,49 +114,80 @@
 	};
 
 	fragment@3 {
-		target = <&i2c0>;
+		target = <&i2c1>;
 		__overlay__ {
 			status = "okay";
+
+			ipmb {
+				compatible = "i2c-ipmb";
+				reg = <0x11>;
+				slave-addr = <0x36>;
+			};
 		};
 	};
 
 	fragment@4 {
-		target = <&i2c1>;
+		target = <&i2c2>;
 		__overlay__ {
 			status = "okay";
+			ipmb {
+				compatible = "i2c-ipmb";
+				reg = <0x11>;
+				slave-addr = <0x36>;
+			};
 		};
 	};
 
 	fragment@5 {
-		target = <&i2c2>;
+		target = <&i2c3>;
 		__overlay__ {
 			status = "okay";
+			ipmb {
+				compatible = "i2c-ipmb";
+				reg = <0x11>;
+				slave-addr = <0x36>;
+			};
 		};
 	};
 
 	fragment@6 {
-		target = <&i2c3>;
+		target = <&i2c4>;
 		__overlay__ {
 			status = "okay";
+			ipmb {
+				compatible = "i2c-ipmb";
+				reg = <0x11>;
+				slave-addr = <0x36>;
+			};
 		};
 	};
 
 	fragment@7 {
-		target = <&i2c4>;
+		target = <&i2c5>;
 		__overlay__ {
 			status = "okay";
+			ipmb {
+				compatible = "i2c-ipmb";
+				reg = <0x11>;
+				slave-addr = <0x36>;
+			};
 		};
 	};
 
 	fragment@8 {
-		target = <&i2c5>;
+		target = <&i2c6>;
 		__overlay__ {
 			status = "okay";
+			ipmb {
+				compatible = "i2c-ipmb";
+				reg = <0x11>;
+				slave-addr = <0x36>;
+			};
 		};
 	};
 
 	fragment@9 {
-		target = <&i2c6>;
+		target = <&i2c7>;
 		__overlay__ {
 			status = "okay";
 			clock-frequency = <400000>;
@@ -187,20 +218,26 @@
 						reg = <0x49>;
 					};
 			fru {
-				compatible = "atmel,24c02";
+				compatible = "atmel,24c256";
 				reg = <0x56>;
-				pagesize = <32>;
+/*				pagesize = <32>; */
 			};
 		};
 	};
 
 	fragment@10 {
-		target = <&i2c7>;
+		target = <&i2c0>;
 		__overlay__ {
 			/* Common i2c */
 			status = "okay";
 			clock-frequency = <100000>;
-
+/*
+			ipmb {
+				compatible = "i2c-ipmb";
+				reg = <0x14>;
+				slave-addr = <0x31>;
+			};
+*/
 		};
 	};
 };
