@@ -405,15 +405,31 @@ HERE
 	debug_takeover "$msg"
 done
 
+mac0=$(get_fw_env_var ethaddr)
+mac1=$(get_fw_env_var eth1addr)
+serial=$(get_fw_env_var serialnumber)
+
 for f in $fslist
 do
 	mount --move $f root/$f
 done
 
-chroot /root /bin/bash <<'EOF'
+mac0=$mac0 mac1=$mac1 serial=$serial chroot /root /bin/bash <<'EOF'
 . /usr/share/openrack/functions
-t=$(board_type -f)
+a=$(board_addr -f)
+t=$(board_type)
 dtoverlay shaosi-$t
+[ $t = CB ] || a=$(printf "%x" $((9 + a*2)))
+echo slave-24c02 0x103$a > /sys/bus/i2c/devices/i2c-0/new_device
+
+if [ -n "$mac0" -a -n "$mac1" -a -n "$serial" ]; then
+    printf "mac0=$mac0\nmac1=$mac1\nserial=$serial\n" |
+        dd of=/sys/class/i2c-dev/i2c-0/device/0-103$a/slave-eeprom bs=256 count=1 2>/dev/null
+    if ! dd if=/sys/class/i2c-dev/i2c-7/device/7-0056/eeprom bs=16k skip=1 2>/dev/null | strings | grep -q serial; then
+        printf "mac0=$mac0\nmac1=$mac1\nserial=$serial\n" |
+            dd of=/sys/class/i2c-dev/i2c-7/device/7-0056/eeprom bs=16k seek=1 2>/dev/null
+    fi
+fi
 EOF
 # switch_root /root $init
 exec chroot /root $init
