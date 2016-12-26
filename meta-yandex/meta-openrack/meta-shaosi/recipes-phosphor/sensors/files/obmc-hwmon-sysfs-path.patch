@@ -1,0 +1,17 @@
+--- pyhwmon/hwmon.py.orig	2016-12-07 13:54:06.000000000 +0300
++++ pyhwmon/hwmon.py	2016-12-22 17:22:52.520925752 +0300
+@@ -138,8 +138,12 @@ class Hwmons():
+ 
+                 if 'names' in hwmon:
+                     for attribute in hwmon['names'].keys():
+-                        self.addObject(
+-                            dpath, dpath+attribute, hwmon['names'][attribute])
++                        if os.access(dpath+attribute, os.F_OK):
++                            self.addObject(
++                                dpath, dpath+attribute, hwmon['names'][attribute])
++                        elif os.access(dpath+'device/'+attribute, os.F_OK):
++                            self.addObject(
++                                dpath, dpath+'device/'+attribute, hwmon['names'][attribute])
+ 
+             else:
+                 print "WARNING - hwmon: Unhandled hwmon: "+dpath
