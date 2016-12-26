@@ -429,6 +429,19 @@ if [ -n "$mac0" -a -n "$mac1" -a -n "$serial" ]; then
         printf "mac0=$mac0\nmac1=$mac1\nserial=$serial\n" |
             dd of=/sys/class/i2c-dev/i2c-7/device/7-0056/eeprom bs=16k seek=1 2>/dev/null
     fi
+else
+    # Match excatly three entries
+    data="$(dd if=/sys/class/i2c-dev/i2c-7/device/7-0056/eeprom bs=16k skip=1 2>/dev/null | strings | awk -vr=3 '/^mac[0-1]=/ || /^serial=/ { s=s $0 "\n"; r-- } END { if (r == 0) print s }')"
+    if [ -n "$data" ]; then
+        mkdir -p -m1777 /run/lock
+        printf "$data" |
+            dd of=/sys/class/i2c-dev/i2c-0/device/0-103$a/slave-eeprom bs=256 count=1 2>/dev/null
+        printf "$data" |
+            sed 's,^mac0=,ethaddr ,; s,^mac1=,eth1addr ,; s,^serial=,serialnumber ,' |
+                /sbin/fw_setenv -s -
+        printf "$data" | sed -n 's,mac0=,,p' | xargs /sbin/ifconfig eth0 hw ether
+        printf "$data" | sed -n 's,mac1=,,p' | xargs /sbin/ifconfig eth1 hw ether
+    fi
 fi
 EOF
 # switch_root /root $init
