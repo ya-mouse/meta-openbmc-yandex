@@ -10,7 +10,7 @@
 	fragment@0 {
 		target-path = "/";
 		__overlay__ {
-			model = "Gigabyte Shaosi CB v3.0 DVT";
+			model = "Gigabyte Shaosi CB v3.0";
 		};
 	};
 
