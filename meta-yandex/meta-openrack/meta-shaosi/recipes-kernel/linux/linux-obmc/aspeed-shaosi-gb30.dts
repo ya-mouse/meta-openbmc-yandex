@@ -117,8 +117,3 @@
 &i2c8 {
 	status = "okay";
 };
-
-&pinctrl {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_extrst_default>;
-};
