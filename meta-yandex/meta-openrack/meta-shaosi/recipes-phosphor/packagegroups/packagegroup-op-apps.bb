@@ -1,4 +1,4 @@
-SUMMARY = "OpenBMC for OpenPOWER - Applications"
+SUMMARY = "OpenBMC for OpenRACK - Applications"
 PR = "r1"
 
 inherit packagegroup
@@ -25,42 +25,31 @@ RPROVIDES_${PN}-fans += "virtual-obmc-fan-mgmt"
 RPROVIDES_${PN}-flash += "virtual-obmc-flash-mgmt"
 RPROVIDES_${PN}-system += "virtual-obmc-system-mgmt"
 
-SUMMARY_${PN}-sensors = "OpenPOWER Sensors"
+SUMMARY_${PN}-sensors = "OpenRACK Sensors"
 RDEPENDS_${PN}-sensors = " \
         obmc-hwmon \
         obmc-mgr-sensor \
         "
 
-SUMMARY_${PN}-chassis = "OpenPOWER Chassis"
+SUMMARY_${PN}-chassis = "OpenRACK Chassis"
 RDEPENDS_${PN}-chassis = " \
-        obmc-button-power \
-        obmc-button-reset \
-        obmc-control-chassis \
-        obmc-hostcheckstop \
         obmc-mgr-inventory \
-        obmc-op-control-power \
-        obmc-pcie-detect \
-        obmc-watchdog \
-        obmc-op-control-host \
         obmc-control-led \
         "
 
-SUMMARY_${PN}-sensors = "OpenPOWER Fans"
+SUMMARY_${PN}-sensors = "OpenRACK Fans"
 RDEPENDS_${PN}-fans = " \
         obmc-hwmon \
         obmc-control-fan \
         "
 
-SUMMARY_${PN}-flash = "OpenPOWER Flash"
+SUMMARY_${PN}-flash = "OpenRACK Flash"
 RDEPENDS_${PN}-flash = " \
-        obmc-flash-bios \
-        obmc-flash-bmc \
         obmc-mgr-download \
         obmc-control-bmc \
         "
-#        obmc-op-flasher 
 
-SUMMARY_${PN}-system = "OpenPOWER System"
+SUMMARY_${PN}-system = "OpenRACK System"
 RDEPENDS_${PN}-system = " \
         obmc-mgr-system \
         obmc-mgr-state \
