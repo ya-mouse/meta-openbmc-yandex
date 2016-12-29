@@ -408,17 +408,34 @@ done
 mac0=$(get_fw_env_var ethaddr)
 mac1=$(get_fw_env_var eth1addr)
 serial=$(get_fw_env_var serialnumber)
+factory=$(get_fw_env_var factory-test-mode)
 
 for f in $fslist
 do
 	mount --move $f root/$f
 done
 
-mac0=$mac0 mac1=$mac1 serial=$serial chroot /root /bin/bash <<'EOF'
+factory_test=$factory mac0=$mac0 mac1=$mac1 serial=$serial chroot /root /bin/bash <<'EOF'
+# Exit if factory-test-mode is set
+
+if [ -z "$factory_test" ]; then
+	# Enable HW reset
+	iotools=/usr/sbin/iotools
+	scu3c=$($iotools mmio_read32 0x1e6e203c)
+	scu80=$($iotools mmio_read32 0x1e6e2080)
+	scu3c=$((scu3c | 8))
+	scu80=$((scu80 | 0x8000))
+	$iotools mmio_write32 0x1e6e2080 $scu80
+	$iotools mmio_write32 0x1e6e203c $scu3c
+fi
+
 . /usr/share/openrack/functions
 a=$(board_addr -f)
-t=$(board_type)
+t=$(board_type)${factory_test:+-factory}
 dtoverlay shaosi-$t
+
+[ -z "$factory_test" ] || exit 0
+
 [ $t = CB ] || a=$(printf "%x" $((9 + a*2)))
 echo slave-24c02 0x103$a > /sys/bus/i2c/devices/i2c-0/new_device
 
