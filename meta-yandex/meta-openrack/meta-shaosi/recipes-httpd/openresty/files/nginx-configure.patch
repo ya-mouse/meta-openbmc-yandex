@@ -1,0 +1,42 @@
+--- openresty-1.11.2.2/configure.orig	2016-11-18 01:24:06.000000000 +0300
++++ openresty-1.11.2.2/configure	2017-01-11 23:44:07.286449127 +0300
+@@ -315,11 +315,7 @@ for my $opt (@ARGV) {
+ print "platform: $platform ($OS)\n";
+ 
+ my $ngx_prefix;
+-if ($platform eq 'msys') {
+-    $ngx_prefix = "$prefix";
+-} else {
+-    $ngx_prefix = "$prefix/nginx";
+-}
++$ngx_prefix = "$prefix";
+ 
+ my $postamble = '';
+ 
+@@ -349,7 +345,7 @@ push @make_install_cmds, "cd $root_dir/b
+     . "\$(MAKE) install DESTDIR=\$(DESTDIR)";
+ 
+ push @make_install_cmds,
+-    "mkdir -p \$(DESTDIR)$prefix/site/lualib"
++    "mkdir -p \$(DESTDIR)$prefix/site/luajit-2.1.0-beta2"
+     . " \$(DESTDIR)$prefix/site/pod"
+     . " \$(DESTDIR)$prefix/site/manifest";
+ 
+@@ -582,7 +578,7 @@ _END_
+         #unshift @ngx_ld_opts, "-L$lib";
+         #unshift @ngx_cc_opts, "-I$inc";
+ 
+-        push @ngx_rpaths, "$luajit_prefix/lib";
++        #push @ngx_rpaths, "$luajit_prefix/lib";
+ 
+     } elsif ($opts->{luajit}) {
+         my $luajit_src = auto_complete 'LuaJIT';
+@@ -770,7 +766,7 @@ _END_
+     {
+         # build lua modules
+ 
+-        my $lualib_prefix = File::Spec->catfile($prefix, "lualib");
++        my $lualib_prefix = File::Spec->catfile($prefix, "share/luajit-2.1.0-beta2");
+         my $site_lualib_prefix = File::Spec->catfile($prefix, "site/lualib");
+ 
+         my $ngx_lua_dir = auto_complete 'ngx_lua';
