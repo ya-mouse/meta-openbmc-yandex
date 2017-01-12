@@ -121,6 +121,19 @@ pkg_postinst_${PN} () {
 			${sysconfdir}/init.d/populate-volatile.sh update
 		fi
 	fi
+OPTS=""
+
+if [ -n "$D" ]; then
+    OPTS="--root=$D"
+fi
+
+if type systemctl >/dev/null 2>/dev/null; then
+	systemctl $OPTS enable openresty.service
+
+	if [ -z "$D" -a "enable" = "enable" ]; then
+		systemctl restart openresty.service
+	fi
+fi
 }
 
 FILES_${PN} += "${localstatedir}/ \
@@ -150,7 +163,3 @@ USERADD_PARAM_${PN} = " \
     --home ${NGINX_WWWDIR} \
     --groups www-data \
     --user-group ${NGINX_USER}"
-
-SYSTEMD_SERVICE_${PN} = "openresty.service"
-
-inherit obmc-phosphor-systemd

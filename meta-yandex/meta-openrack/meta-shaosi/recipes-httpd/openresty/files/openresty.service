@@ -3,10 +3,11 @@ Description=Nginx Server
 After=network.target
 [Service]
 Type=forking
-PIDFile=@SYSCONFDIR@/nginx/run/nginx.pid
+Restart=always
+PIDFile=@SYSCONFDIR@/openresty/run/openresty.pid
 ExecStartPre=@BASEBINDIR@/mkdir -p @LOCALSTATEDIR@/log/nginx
-ExecStart=@SYSCONFDIR@/init.d/nginx start
-ExecStop=@SYSCONFDIR@/init.d/nginx stop
+ExecStart=@SYSCONFDIR@/init.d/openresty start
+ExecStop=@SYSCONFDIR@/init.d/openresty stop
 [Install]
 WantedBy=multi-user.target
 
