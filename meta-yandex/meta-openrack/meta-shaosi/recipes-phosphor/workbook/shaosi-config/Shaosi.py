@@ -6,7 +6,7 @@
 board = None
 try:
     with open('/etc/openrack-board', 'r') as f:
-        board = f.read().split('-', 2)[0]
+        board, number = f.read().split('-', 2)
 except: pass
 
 SYSTEM_STATES = [
@@ -70,16 +70,14 @@ GPIO_CONFIG['POWER_BUTTON'] = { 'gpio_pin': 'H1', 'direction': 'both' }
 #GPIO_CONFIG['SLOT1_PRESENT'] =         { 'gpio_pin': 'N4', 'direction': 'in' }
 #GPIO_CONFIG['SLOT2_PRESENT'] =         { 'gpio_pin': 'N5', 'direction': 'in' }
 
-HWMON_CONFIG = {
-	'7-0048' :  {
-		'names' : {
-			'temp1_input' : { 'object_path' : 'temperature/ambient','poll_interval' : 5000,'scale' : -3,'units' : 'C' },
-		}
-	},
-}
-
 if board == 'CB':
-    HWMON_CONFIG.update({
+    CB_temp_48 = 'ambient'
+    if number == 3:
+	CB_temp_48 = 'front'
+    elif number == 4:
+	CB_temp_48 = 'rear'
+
+    HWMON_CONFIG = {
 	'7-002f' : {
 		'names' : {
 			'pwm1' : { 'object_path' : 'speed/fan1','poll_interval' : 3000,'scale' : 1,'units' : '' },
@@ -105,12 +103,25 @@ if board == 'CB':
 			'in1_input' : { 'object_path' : 'power/current','poll_interval' : 10000,'scale' : 10000,'units' : 'A' },
 		}
 	},
+	'7-0048' :  {
+		'names' : {
+			'temp1_input' : { 'object_path' : 'temperature/{}'.format(CB_temp_48),'poll_interval' : 5000,'scale' : -3,'units' : 'C' },
+		}
+	},
 	'7-0049' :  {
 		'names' : {
 			'temp1_input' : { 'object_path' : 'temperature/board','poll_interval' : 5000,'scale' : -3,'units' : 'C' },
 		}
 	},
-    })
+    }
+else:
+    HWMON_CONFIG = {
+	'7-0048' :  {
+		'names' : {
+			'temp1_input' : { 'object_path' : 'temperature/ambient','poll_interval' : 5000,'scale' : -3,'units' : 'C' },
+		}
+	},
+    }
 
 # Miscellaneous non-poll sensor with system specific properties.
 # The sensor id is the same as those defined in ID_LOOKUP['SENSOR'].
