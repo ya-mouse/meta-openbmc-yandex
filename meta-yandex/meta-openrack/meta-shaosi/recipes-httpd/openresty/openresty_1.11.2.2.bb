@@ -20,7 +20,7 @@ SRC_URI = " \
 	file://nginx.conf \
 	file://nginx.init \
 	file://nginx-volatile.conf \
-	file://nginx.service \
+	file://openresty.service \
 "
 
 inherit update-rc.d useradd
@@ -59,10 +59,10 @@ do_configure () {
 	--with-sys-nerr=132 \
 	--with-pcre-jit \
 	--with-luajit=${STAGING_LIBDIR}/.. \
-	--conf-path=${sysconfdir}/nginx/nginx.conf \
+	--conf-path=${sysconfdir}/openresty/nginx.conf \
 	--http-log-path=${localstatedir}/log/nginx/access.log \
 	--error-log-path=${localstatedir}/log/nginx/error.log \
-	--pid-path=/run/nginx/nginx.pid \
+	--pid-path=/run/openresty/openresty.pid \
 	--prefix=${prefix} \
 	--with-http_ssl_module \
 	--with-http_gzip_static_module \
@@ -87,14 +87,14 @@ do_install () {
 	chown ${NGINX_USER}:www-data -R ${D}${NGINX_WWWDIR}
 
 	install -d ${D}${sysconfdir}/init.d
-	install -m 0755 ${WORKDIR}/nginx.init ${D}${sysconfdir}/init.d/nginx
-	sed -i 's,/usr/sbin/,${sbindir}/,g' ${D}${sysconfdir}/init.d/nginx
-	sed -i 's,/etc/,${sysconfdir}/,g'  ${D}${sysconfdir}/init.d/nginx
+	install -m 0755 ${WORKDIR}/nginx.init ${D}${sysconfdir}/init.d/openresty
+	sed -i 's,/usr/sbin/,${sbindir}/,g' ${D}${sysconfdir}/init.d/openresty
+	sed -i 's,/etc/,${sysconfdir}/,g'  ${D}${sysconfdir}/init.d/openresty
 
-	install -d ${D}${sysconfdir}/nginx
-	install -m 0644 ${WORKDIR}/nginx.conf ${D}${sysconfdir}/nginx/nginx.conf
-	sed -i 's,/var/,${localstatedir}/,g' ${D}${sysconfdir}/nginx/nginx.conf
-	install -d ${D}${sysconfdir}/nginx/sites-enabled
+	install -d ${D}${sysconfdir}/openresty
+	install -m 0644 ${WORKDIR}/nginx.conf ${D}${sysconfdir}/openresty/nginx.conf
+	sed -i 's,/var/,${localstatedir}/,g' ${D}${sysconfdir}/openresty/nginx.conf
+	install -d ${D}${sysconfdir}/openresty/sites-enabled
 
 	install -d ${D}${sysconfdir}/default/volatiles
 	install -m 0644 ${WORKDIR}/nginx-volatile.conf ${D}${sysconfdir}/default/volatiles/99_nginx
@@ -102,15 +102,15 @@ do_install () {
 
         if ${@bb.utils.contains('DISTRO_FEATURES','systemd','true','false',d)};then
             install -d ${D}${systemd_unitdir}/system
-            install -m 0644 ${WORKDIR}/nginx.service ${D}${systemd_unitdir}/system/
+            install -m 0644 ${WORKDIR}/openresty.service ${D}${systemd_unitdir}/system/openresty.service
             sed -i -e 's,@SYSCONFDIR@,${sysconfdir},g' \
                     -e 's,@LOCALSTATEDIR@,${localstatedir},g' \
                     -e 's,@BASEBINDIR@,${base_bindir},g' \
-                    ${D}${systemd_unitdir}/system/nginx.service
+                    ${D}${systemd_unitdir}/system/openresty.service
         fi
 
 	# Cleanup
-	rm -rf ${D}/usr/pod ${D}/usr/site ${D}/usr/resty.index
+	rm -rf ${D}/usr/pod ${D}/usr/site ${D}/usr/resty.index ${D}/usr/bin
 }
 
 pkg_postinst_${PN} () {
@@ -124,24 +124,24 @@ pkg_postinst_${PN} () {
 }
 
 FILES_${PN} += "${localstatedir}/ \
-                ${systemd_unitdir}/system/nginx.service \
+                ${systemd_unitdir}/system/openresty.service \
                 ${datadir}/luajit-*/*/*/*.lua \
                 ${datadir}/luajit-*/*/*.lua \
                 ${datadir}/luajit-*/*.so \
                 "
 
-CONFFILES_${PN} = "${sysconfdir}/nginx/nginx.conf \
-		${sysconfdir}/nginx/fastcgi.conf\
-		${sysconfdir}/nginx/fastcgi_params \
-		${sysconfdir}/nginx/koi-utf \
-		${sysconfdir}/nginx/koi-win \
-		${sysconfdir}/nginx/mime.types \
-		${sysconfdir}/nginx/scgi_params \
-		${sysconfdir}/nginx/uwsgi_params \
-		${sysconfdir}/nginx/win-utf \
+CONFFILES_${PN} = "${sysconfdir}/openresty/nginx.conf \
+		${sysconfdir}/openresty/fastcgi.conf\
+		${sysconfdir}/openresty/fastcgi_params \
+		${sysconfdir}/openresty/koi-utf \
+		${sysconfdir}/openresty/koi-win \
+		${sysconfdir}/openresty/mime.types \
+		${sysconfdir}/openresty/scgi_params \
+		${sysconfdir}/openresty/uwsgi_params \
+		${sysconfdir}/openresty/win-utf \
 "
 
-INITSCRIPT_NAME = "nginx"
+INITSCRIPT_NAME = "openresty"
 INITSCRIPT_PARAMS = "defaults 92 20"
 
 USERADD_PACKAGES = "${PN}"
@@ -150,3 +150,7 @@ USERADD_PARAM_${PN} = " \
     --home ${NGINX_WWWDIR} \
     --groups www-data \
     --user-group ${NGINX_USER}"
+
+SYSTEMD_SERVICE_${PN} = "openresty.service"
+
+inherit obmc-phosphor-systemd
