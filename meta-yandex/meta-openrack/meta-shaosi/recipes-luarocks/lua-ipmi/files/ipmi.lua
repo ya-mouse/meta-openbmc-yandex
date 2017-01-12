@@ -1,9 +1,10 @@
 local bin = require 'struct'
 local bit = require 'bit'
+local nixio = require 'nixio'
 local ffi = require 'ffi'
 
-local fopen = io.open
-local hash = md5.new
+local fopen = nixio.open
+local hash = nixio.crypto.hash
 local stpack, stunpack = bin.pack, bin.unpack
 local bor, band, bxor, lshift, rshift = bit.bor, bit.band, bit.bxor, bit.lshift, bit.rshift
 local byte, sub = string.byte, string.sub
@@ -215,13 +216,14 @@ function _L._ipmi15authcode(self, payload, checkremotecode)
     else
         seqbytes = stpack('<I', self._sequencenumber)
     end
-    local md5 = hash()
+    local md5 = hash('md5')
     md5:update(password)
     md5:update(self._sessionid)
     md5:update(payload)
     md5:update(seqbytes)
     md5:update(password)
-    return md5:finish()
+    local hex, bin = md5:final()
+    return bin
 end
 
 function _L._make_ipmi_payload(self, netfn, command, ...)
@@ -739,9 +741,6 @@ function _O.new(self, devnum, cmds)
     }
     if not t.f then return end
 
-#    -- FIXME: read /proc/self/fd and find /dev/ipmi...
-#    getmetatable(t.f)._fileno = 3
-#    getmetatable(t.f).getfd = function(self) return self._fileno end
     getmetatable(t.f).getfd = function(self) return tonumber(tostring(self):sub(12)) end
 
     local i = ffi.new('int[1]', 0)
