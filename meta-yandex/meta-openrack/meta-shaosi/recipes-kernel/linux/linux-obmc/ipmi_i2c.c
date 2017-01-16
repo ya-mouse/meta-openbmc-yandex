@@ -22,7 +22,7 @@
 #include <linux/timer.h>
 #include <linux/completion.h>
 
-#define IPMI_TIMEOUT_TIME_MSEC	100
+#define IPMI_TIMEOUT_TIME_MSEC	1000
 #define IPMI_TIMEOUT_JIFFIES	msecs_to_jiffies(IPMI_TIMEOUT_TIME_MSEC)
 // (IPMI_TIMEOUT_TIME_USEC*HZ/1000000)
 
