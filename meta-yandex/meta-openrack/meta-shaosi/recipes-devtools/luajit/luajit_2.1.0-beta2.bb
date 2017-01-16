@@ -47,6 +47,8 @@ do_install () {
           ${D}${datadir}/lua \
           ${D}${libdir}/lua/5.* \
           ${D}${libdir}/lua
+    ln -s ${bindir}/${BPN}-${PV} ${D}${bindir}/luajit
+    ln -s ${bindir}/luajit ${D}${bindir}/lua
 }
 
 PACKAGES += 'luajit-common'
