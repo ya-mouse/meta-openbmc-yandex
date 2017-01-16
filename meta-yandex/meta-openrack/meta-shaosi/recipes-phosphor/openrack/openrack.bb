@@ -22,7 +22,7 @@ do_install() {
         install -m 0755 ${WORKDIR}/b53tool.lua ${D}/usr/sbin/b53tool
         install -m 0755 ${WORKDIR}/miitool.lua ${D}/usr/sbin/miitool
 
-        rsync -a ${WORKDIR}/lua/*.lua ${D}/usr/share/lua/5.1/
+        # rsync -a ${WORKDIR}/lua/*.lua ${D}/usr/share/lua/5.1/
         rsync -a ${WORKDIR}/openrack/root/ ${D}/
         rsync -a ${WORKDIR}/openrack/tests/ ${D}/usr/share/openrack/tests/
 
