@@ -12,12 +12,15 @@ SRC_URI = "file://LICENSE \
 
 S = "${WORKDIR}"
 
-luadir = "/luajit-2.1"
+luadir = "/lua/5.1"
 
 do_install () {
-    install -pD -m 644 ${WORKDIR}/ipmi.lua ${D}${datadir}${luadir}/ipmi.lua
+    install -d ${D}${datadir}${luadir}
+    install -m 644 ${WORKDIR}/ipmi.lua ${D}${datadir}${luadir}/ipmi.lua
 }
 
 FILES_${PN} += "${datadir}${luadir}/*.lua"
 
 RDEPENDS_${PN} = " lua-struct lua-nixio"
+
+inherit allarch

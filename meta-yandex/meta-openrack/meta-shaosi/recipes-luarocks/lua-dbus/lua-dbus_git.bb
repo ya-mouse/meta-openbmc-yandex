@@ -16,7 +16,7 @@ SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/git"
 SYSROOTS = "${STAGING_DIR}/${MACHINE}"
 
-luadir = "/luajit-2.1"
+luadir = "/lua/5.1"
 
 do_install () {
     install -d ${D}${datadir}${luadir}/${PN}
@@ -29,3 +29,5 @@ FILES_${PN} += "${datadir}${luadir}/${PN}/*.lua \
 "
 
 RDEPENDS_${PN} = "lua-ldbus"
+
+inherit allarch

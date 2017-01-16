@@ -16,12 +16,12 @@ S = "${WORKDIR}"
 SYSROOTS = "${STAGING_DIR}/${MACHINE}"
 
 DEPENDS = " luajit dbus"
-luadir = "/luajit-2.1"
+luadir = "/lua/5.1"
 
 MAKE_FLAGS = "'PREFIX=${D}${prefix}' \
 'CC=${CC}' \
-'LUAINC=${SYSROOTS}${includedir}${luadir}' \
-'LUALIB=${D}${datadir}${luadir}' \
+'LUAINC=${SYSROOTS}${includedir}/luajit-2.1' \
+'LUALIB=${D}${libdir}${luadir}' \
 "
 
 do_compile () {
@@ -29,7 +29,7 @@ do_compile () {
 }
 
 do_install () {
-    install -pD -m 644 ${WORKDIR}/struct.so ${D}${datadir}${luadir}/struct.so
+    install -pD -m 644 ${WORKDIR}/struct.so ${D}${libdir}${luadir}/struct.so
 }
 
-FILES_${PN} += "${datadir}${luadir}/*.so"
+FILES_${PN} += "${libdir}${luadir}/*.so"
