@@ -73,7 +73,7 @@ do_configure () {
 }
 
 do_install () {
-	oe_runmake 'DESTDIR=${D}' install
+	oe_runmake 'DESTDIR=${D}' 'LUA_CMODULE_DIR=${D}${libdir}/lua/5.1' install
 	rm -fr ${D}${localstatedir}/run ${D}/run
 	if ${@bb.utils.contains('DISTRO_FEATURES', 'systemd', 'true', 'false', d)}; then
 		install -d ${D}${sysconfdir}/tmpfiles.d
@@ -138,9 +138,9 @@ fi
 
 FILES_${PN} += "${localstatedir}/ \
                 ${systemd_unitdir}/system/openresty.service \
-                ${datadir}/luajit-*/*/*/*.lua \
-                ${datadir}/luajit-*/*/*.lua \
-                ${datadir}/luajit-*/*.so \
+                ${datadir}/lua/5.1/*/*/*.lua \
+                ${datadir}/lua/5.1/*/*.lua \
+                ${libdir}/lua/5.1/*.so \
                 "
 
 CONFFILES_${PN} = "${sysconfdir}/openresty/nginx.conf \

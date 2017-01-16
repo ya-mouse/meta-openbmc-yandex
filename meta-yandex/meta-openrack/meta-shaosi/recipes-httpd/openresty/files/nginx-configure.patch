@@ -36,7 +36,16 @@
          # build lua modules
  
 -        my $lualib_prefix = File::Spec->catfile($prefix, "lualib");
-+        my $lualib_prefix = File::Spec->catfile($prefix, "share/luajit-2.1.0-beta2");
++        my $lualib_prefix = File::Spec->catfile($prefix, "share/lua/5.1");
          my $site_lualib_prefix = File::Spec->catfile($prefix, "site/lualib");
  
          my $ngx_lua_dir = auto_complete 'ngx_lua';
+@@ -800,7 +800,7 @@ _EOC_
+             }
+ 
+             my $extra_opts = " DESTDIR=\$(DESTDIR) LUA_INCLUDE_DIR=$lua_inc " .
+-                "LUA_CMODULE_DIR=$lualib_prefix LUA_MODULE_DIR=$lualib_prefix";
++                "LUA_CMODULE_DIR=".(File::Spec->catfile($prefix, "lib/lua/5.1"))." LUA_MODULE_DIR=$lualib_prefix";
+ 
+             if ($platform eq 'msys') {
+                 my $luajit_root = File::Spec->rel2abs("luajit-root");
