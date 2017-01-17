@@ -80,27 +80,27 @@ if board == 'CB':
     HWMON_CONFIG = {
 	'7-002f' : {
 		'names' : {
-			'pwm1' : { 'object_path' : 'speed/fan1','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'pwm2' : { 'object_path' : 'speed/fan2','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'pwm3' : { 'object_path' : 'speed/fan3','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'pwm4' : { 'object_path' : 'speed/fan4','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'pwm5' : { 'object_path' : 'speed/fan5','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'pwm6' : { 'object_path' : 'speed/fan6','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'pwm7' : { 'object_path' : 'speed/fan7','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'pwm8' : { 'object_path' : 'speed/fan8','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'fan1_input' : { 'object_path' : 'tach/fan1','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'fan2_input' : { 'object_path' : 'tach/fan2','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'fan3_input' : { 'object_path' : 'tach/fan3','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'fan4_input' : { 'object_path' : 'tach/fan4','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'fan5_input' : { 'object_path' : 'tach/fan5','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'fan6_input' : { 'object_path' : 'tach/fan6','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'fan7_input' : { 'object_path' : 'tach/fan7','poll_interval' : 3000,'scale' : 1,'units' : '' },
-			'fan8_input' : { 'object_path' : 'tach/fan8','poll_interval' : 3000,'scale' : 1,'units' : '' },
+			'pwm1' : { 'object_path' : 'speed/fan1','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'pwm2' : { 'object_path' : 'speed/fan2','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'pwm3' : { 'object_path' : 'speed/fan3','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'pwm4' : { 'object_path' : 'speed/fan4','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'pwm5' : { 'object_path' : 'speed/fan5','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'pwm6' : { 'object_path' : 'speed/fan6','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'pwm7' : { 'object_path' : 'speed/fan7','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'pwm8' : { 'object_path' : 'speed/fan8','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'fan1_input' : { 'object_path' : 'tach/fan1','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'fan2_input' : { 'object_path' : 'tach/fan2','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'fan3_input' : { 'object_path' : 'tach/fan3','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'fan4_input' : { 'object_path' : 'tach/fan4','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'fan5_input' : { 'object_path' : 'tach/fan5','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'fan6_input' : { 'object_path' : 'tach/fan6','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'fan7_input' : { 'object_path' : 'tach/fan7','poll_interval' : 1000,'scale' : 1,'units' : '' },
+			'fan8_input' : { 'object_path' : 'tach/fan8','poll_interval' : 1000,'scale' : 1,'units' : '' },
 		}
 	},
 	'7-0040' : {
 		'names' : {
-			'in1_input' : { 'object_path' : 'power/current','poll_interval' : 10000,'scale' : 10000,'units' : 'A' },
+			'in1_input' : { 'object_path' : 'power/current','poll_interval' : 5000,'scale' : 10000,'units' : 'A' },
 		}
 	},
 	'7-0048' :  {
