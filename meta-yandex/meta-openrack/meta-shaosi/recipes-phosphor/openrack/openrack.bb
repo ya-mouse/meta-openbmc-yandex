@@ -9,6 +9,7 @@ SRC_URI += "file://shaosi-CB.dtbo"
 SRC_URI += "file://shaosi-RMC.dtbo"
 SRC_URI += "file://shaosi-CB-factory.dtbo"
 SRC_URI += "file://shaosi-RMC-factory.dtbo"
+SRC_URI += "file://master-pmbus.dtbo"
 SRC_URI += "file://b53tool.lua"
 SRC_URI += "file://miitool.lua"
 SRC_URI += "file://setup-CB"
@@ -18,6 +19,7 @@ SRC_URI += "file://lua.tar.gz"
 do_install() {
         install -d ${D}/etc/overlays ${D}/usr/sbin ${D}/usr/share/lua/5.1 ${D}/usr/share/openrack/tests
         install -m 0644 ${WORKDIR}/shaosi-*.dtbo ${D}/etc/overlays/
+        install -m 0644 ${WORKDIR}/master-pmbus.dtbo ${D}/etc/overlays/
 
         install -m 0755 ${WORKDIR}/b53tool.lua ${D}/usr/sbin/b53tool
         install -m 0755 ${WORKDIR}/miitool.lua ${D}/usr/sbin/miitool
