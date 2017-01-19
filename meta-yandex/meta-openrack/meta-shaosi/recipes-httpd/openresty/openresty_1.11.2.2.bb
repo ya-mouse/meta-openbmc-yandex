@@ -20,6 +20,9 @@ SRC_URI = " \
 	file://nginx.conf \
 	file://nginx.init \
 	file://nginx-volatile.conf \
+	file://cert.pem \
+	file://cert.key \
+	file://dhparam.pem \
 	file://openresty.service \
 "
 
@@ -96,6 +99,10 @@ do_install () {
 	sed -i 's,/var/,${localstatedir}/,g' ${D}${sysconfdir}/openresty/nginx.conf
 	install -d ${D}${sysconfdir}/openresty/sites-enabled
 
+	install -m 0644 ${WORKDIR}/cert.pem ${D}${sysconfdir}/openresty/cert.pem
+	install -m 0644 ${WORKDIR}/cert.key ${D}${sysconfdir}/openresty/cert.key
+	install -m 0644 ${WORKDIR}/dhparam.pem ${D}${sysconfdir}/openresty/dhparam.pem
+
 	install -d ${D}${sysconfdir}/default/volatiles
 	install -m 0644 ${WORKDIR}/nginx-volatile.conf ${D}${sysconfdir}/default/volatiles/99_nginx
 	sed -i 's,/var/,${localstatedir}/,g' ${D}${sysconfdir}/default/volatiles/99_nginx
@@ -148,6 +155,8 @@ CONFFILES_${PN} = "${sysconfdir}/openresty/nginx.conf \
 		${sysconfdir}/openresty/fastcgi_params \
 		${sysconfdir}/openresty/koi-utf \
 		${sysconfdir}/openresty/koi-win \
+		${sysconfdir}/openresty/cert.pem \
+		${sysconfdir}/openresty/cert.key \
 		${sysconfdir}/openresty/mime.types \
 		${sysconfdir}/openresty/scgi_params \
 		${sysconfdir}/openresty/uwsgi_params \
