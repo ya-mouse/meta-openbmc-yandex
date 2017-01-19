@@ -1,0 +1,12 @@
+[Unit]
+Description=Phosphor Webserver
+After=network.target
+
+[Service]
+Restart=always
+ExecStart=/usr/sbin/phosphor-gevent $APPLICATION
+Environment="PYTHONUNBUFFERED=1"
+EnvironmentFile=/etc/default/obmc/wsgi_app
+
+[Install]
+WantedBy=multi-user.target

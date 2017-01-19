@@ -1,0 +1,38 @@
+--- module/obmc/wsgi/apps/rest_dbus.py.orig	2016-12-07 13:54:01.000000000 +0300
++++ module/obmc/wsgi/apps/rest_dbus.py	2017-01-19 15:25:43.386338908 +0300
+@@ -64,7 +64,7 @@ class UserInGroup:
+ 
+ 
+ class RouteHandler(object):
+-    _require_auth = obmc.utils.misc.makelist(valid_user)
++    _require_auth = None # obmc.utils.misc.makelist(valid_user)
+ 
+     def __init__(self, app, bus, verbs, rules):
+         self.app = app
+@@ -697,7 +697,7 @@ class App(Bottle):
+     def install_plugins(self):
+         # install json api plugins
+         json_kw = {'indent': 2, 'sort_keys': True}
+-        self.install(AuthorizationPlugin())
++        # self.install(AuthorizationPlugin())
+         self.install(JsonpPlugin(**json_kw))
+         self.install(JSONPlugin(**json_kw))
+         self.install(JsonApiResponsePlugin())
+@@ -711,7 +711,7 @@ class App(Bottle):
+ 
+     def create_handlers(self):
+         # create route handlers
+-        self.session_handler = SessionHandler(self, self.bus)
++        # self.session_handler = SessionHandler(self, self.bus)
+         self.directory_handler = DirectoryHandler(self, self.bus)
+         self.list_names_handler = ListNamesHandler(self, self.bus)
+         self.list_handler = ListHandler(self, self.bus)
+@@ -721,7 +721,7 @@ class App(Bottle):
+         self.instance_handler = InstanceHandler(self, self.bus)
+ 
+     def install_handlers(self):
+-        self.session_handler.install()
++        # self.session_handler.install()
+         self.directory_handler.install()
+         self.list_names_handler.install()
+         self.list_handler.install()

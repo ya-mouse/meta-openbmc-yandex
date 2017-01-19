@@ -1,0 +1,26 @@
+--- gevent/phosphor-gevent.orig	2017-01-19 15:13:58.000000000 +0300
++++ gevent/phosphor-gevent	2017-01-19 15:15:11.224085043 +0300
+@@ -34,14 +34,18 @@ if __name__ == '__main__':
+ 
+     app = App()
+ 
+-    if os.environ.get('LISTEN_PID', None) == str(os.getpid()):
+-        FIRST_SYSTEMD_SOCKET_FD = 3
+-        bind = gevent.socket.fromfd(FIRST_SYSTEMD_SOCKET_FD,
+-            gevent.socket.AF_INET,
++    if True:
++        bind = gevent.socket.socket(gevent.socket.AF_UNIX,
+             gevent.socket.SOCK_STREAM)
++        sockname = '/run/phoshpor-gevent.socket'
++        if os.path.exists(sockname):
++            os.remove(sockname)
++        bind.bind(sockname)
++        bind.listen(10) # backlog for 10 connections
++        os.chmod(sockname, 0666)
+     else:
+         bind = ('', 443)
+ 
+     server = WSGIServer(
+-        bind, app, keyfile=default_cert, certfile=default_cert)
++        bind, app)
+     server.serve_forever()
