@@ -23,7 +23,7 @@
 				compatible = "nxp,pca9547";
 				#address-cells = <1>;
 				#size-cells = <0>;
-				reg = <0x77>;
+				reg = <0x70>;
 				reset-gpios = <&bpbio 0 GPIO_ACTIVE_LOW>;
 				i2c-mux-idle-disconnect = <0xff>;
 
@@ -115,23 +115,6 @@
 					#address-cells = <1>;
 					#size-cells = <0>;
 					reg = <5>;
-
-					fru {
-						compatible = "atmel,24c02";
-						reg = <0x50>;
-						/* pagesize = <16>; */
-					};
-
-					pmbus {
-						compatible = "general,pmbus";
-						reg = <0x10>;
-					};
-				};
-
-				shelf@6 {
-					#address-cells = <1>;
-					#size-cells = <0>;
-					reg = <6>;
 
 					fru {
 						compatible = "atmel,24c02";
