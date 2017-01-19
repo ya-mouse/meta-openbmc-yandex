@@ -1,0 +1,63 @@
+--- lua-resty-stack/lib/resty/stack.lua.orig	2017-01-18 18:33:14.680000000 +0400
++++ lua-resty-stack/lib/resty/stack.lua	2017-01-18 19:10:36.796000000 +0400
+@@ -22,7 +22,9 @@ local read_body = ngx.req.read_body
+ local get_post_args = ngx.req.get_post_args
+ local get_uri_args = ngx.req.get_uri_args
+ local re_find = ngx.re.find
++local re_match = ngx.re.match
+ local WARN = ngx.WARN
++local ERR = ngx.ERR
+ local HTTP_OK = ngx.HTTP_OK
+ local HTTP_NOT_FOUND = ngx.HTTP_NOT_FOUND
+ local HTTP_UNAUTHORIZED = ngx.HTTP_UNAUTHORIZED
+@@ -86,7 +88,7 @@ local function router(self, path, servic
+     local auth = service.AUTHORIZE
+     for m,o in pairs(service) do
+         local mt = type(o)
+-        local mp = path..'/'..m
++        local mp = m..':'..path
+         local authorize = auth == true or auth and auth[m]
+         if mt == 'function' then
+             self.services[mp] = { service = o, authorize = authorize }
+@@ -199,22 +201,17 @@ function _M.load(self, uri)
+     end
+ 
+     -- check path or path/method
+-    local route  = services[path] or services[path..'/'..method]
+-
+-    -- check args number service/:id/action
+-    if not route then
+-        local from, to, err = re_find(path, '([0-9]+)', 'jo')
+-        if from then
+-            local service = sub(path, 1, from - 2)
+-            local action = sub(path, to + 2)
+-            if action == '' then
+-                action = method
+-            end
+-
+-            route = services[service..'/'..action]
+-            arg.id = sub(path, from, to)
++    local mpath, rs, v, route
++    for rs, v in pairs(services) do
++        local err
++        mpath, err = re_match(method..':'..path, rs, 'jo')
++        if mpath ~= nil then
++            -- log(ERR, 'ERR['..method..':'..path..']'..tostring(rs)..'='..tostring(route))
++            route = v
++            goto found
+         end
+     end
++    ::found::
+ 
+     if not route then
+         return HTTP_NOT_FOUND
+@@ -230,7 +227,8 @@ function _M.load(self, uri)
+     local params = {
+         authorize = route.authorize,
+         config = self.config,
+-        arg = arg
++        arg = arg,
++        match = mpath
+     }
+ 
+     -- execute begin request hook
