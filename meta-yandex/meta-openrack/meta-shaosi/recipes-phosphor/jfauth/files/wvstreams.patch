@@ -1,0 +1,222 @@
+--- git/pam.d-jfauthd.orig	2017-01-20 14:52:35.110411101 +0300
++++ git/pam.d-jfauthd	2017-01-20 14:52:18.898658475 +0300
+@@ -1,3 +1,4 @@
++#%PAM-1.0
+ #
+ # /etc/pam.d/jfauthd - specify the PAM behaviour for jfauthd
+ #
+@@ -8,9 +9,9 @@
+ # Instead, keep the default account, password, and session behaviour (since
+ # jfauthd won't be used for those) and just use a simple default for auth.
+ #
+-@include common-account
+-@include common-password
+-@include common-session
++account  include common-account
++password include common-password
++session  include common-session
+ 
+ # Example of how to just use pam_unix
+ auth	required	pam_unix.so nullok_secure
+--- git/Makefile.orig	2017-01-20 12:47:15.000000000 +0300
++++ git/Makefile	2017-01-20 12:47:57.302786576 +0300
+@@ -12,27 +12,21 @@ JFRELEASE:=${_JFRELEASE}${_JFDIRTY}
+ 
+ default: all
+ 
+-all: jfauthd jfauth pam_jfauth.so pamtest
++all: jfauthd pam_jfauth.so
+ 
+ install: all
+ 	install -d \
+ 		${DESTDIR}/usr/sbin \
+-		${DESTDIR}/usr/bin \
+ 		${DESTDIR}/lib/security \
+-		${DESTDIR}/etc/pam.d \
++		${DESTDIR}/etc/pam.d
+-		${DESTDIR}/usr/share/doc/jfauth/examples
+ 	install -m 0755 -t ${DESTDIR}/usr/sbin jfauthd
+-	install -m 0755 -t ${DESTDIR}/usr/bin jfauth
+ 	install -m 0644 -t ${DESTDIR}/lib/security pam_jfauth.so
+ 	install -m 0644 -T pam.d-jfauthd ${DESTDIR}/etc/pam.d/jfauthd
+-	install -m 0644 -t ${DESTDIR}/usr/share/doc/jfauth COPYING README
+-	install -m 0644 -T example.common-auth \
+-		${DESTDIR}/usr/share/doc/jfauth/examples/common-auth
+-		
++
+ deb:
+ 	dpkg-buildpackage -rfakeroot -I'\.git'
+ 
+-jfauthd: LIBS+=-lwvstreams -lpam
++jfauthd: LIBS+=-lwvstreams -lwvutils -lwvbase -lpam
+ jfauthd: jfauthd.o authpam.o jfversion.o
+ 
+ jfauth: jfauth.o libjfauth.o
+--- git/jfauthd.cc.orig	2017-01-19 19:42:44.000000000 +0300
++++ git/jfauthd.cc	2017-01-19 20:02:33.797965806 +0300
+@@ -1,6 +1,8 @@
+ #include "jfauthd.h"
+ #include "jfauth.h"
+ #include "wvstreamsdaemon.h"
++#include "wvtcplistener.h"
++#include "wvunixlistener.h"
+ #include "wvtcp.h"
+ #include "wvunixsocket.h"
+ #include "wvstreamclone.h"
+@@ -181,7 +183,7 @@ class ForwardAuth : public AuthBase
+ 	s->runonce(0);
+ 	s->runonce(0);
+ 	s->alarm(5000);
+-	s->setcallback(_callback, this);
++	s->setcallback(wv::bind(_callback, this));
+ 	WvIStreamList::globallist.append(s, false, (char *)"forwardauth");
+     }
+     
+@@ -215,7 +217,7 @@ class ForwardAuth : public AuthBase
+ 	_ok = s->isok();
+     }
+     
+-    static void _callback(WvStream &, void *userdata)
++    static void _callback(void *userdata)
+     {
+ 	ForwardAuth *auth = (ForwardAuth *)userdata;
+ 	assert(auth->s); // it should be auth->s *calling* us, so I hope so!
+@@ -387,8 +389,9 @@ public:
+     }
+ };
+ 
++WvStreamsDaemon *my_daemon = NULL;
+ 
+-static void tcp_incoming(WvStream &, void *userdata)
++static void tcp_incoming(void *userdata, IWvStream *_s)
+ {
+     WvTCPListener *l = (WvTCPListener *)userdata;
+     WvIStreamList::globallist.append(new AuthStream(l->accept(), true),
+@@ -396,7 +399,7 @@ static void tcp_incoming(WvStream &, voi
+ }
+ 
+ 
+-static void ssl_incoming(WvStream &, void *userdata)
++static void ssl_incoming(void *userdata, IWvStream *_s)
+ {
+     WvTCPListener *l = (WvTCPListener *)userdata;
+     WvSSLStream *ssl = new WvSSLStream(l->accept(), x509, 0, true);
+@@ -405,24 +408,23 @@ static void ssl_incoming(WvStream &, voi
+ }
+ 
+ 
+-static void unix_incoming(WvStream &, void *userdata)
++static void unix_incoming(void *userdata, IWvStream *_s)
+ {
+     WvUnixListener *l = (WvUnixListener *)userdata;
+-    WvIStreamList::globallist.append(new AuthStream(l->accept(), false),
+-				     true, (char *)"unix_incoming");
++    my_daemon->add_stream(new AuthStream(_s, false), true, "unix_incoming");
+ }
+ 
+ 
+-static void startup(WvStreamsDaemon &daemon, void *)
++static void startup(WvStreamsDaemon *_daemon)
+ {
+     if (!enable_tcp && !enable_ssl && !enable_unix)
+     {
+-	daemon.log(WvLog::Critical, "Must specify one of -u, -t, -s\n");
++	_daemon->log(WvLog::Critical, "Must specify one of -u, -t, -s\n");
+ 	return;
+     }
+     
+     if (do_smbpasswd && getuid() != 0)
+-	daemon.log(WvLog::Warning, 
++	_daemon->log(WvLog::Warning, 
+ 	   "smbpasswd updates enabled, but jfauthd not running as root\n");
+     
+     if (globalauth)
+@@ -435,20 +438,8 @@ static void startup(WvStreamsDaemon &dae
+     if (enable_tcp)
+     {
+ 	WvTCPListener *tcp = new WvTCPListener(5478);
+-	tcp->setcallback(tcp_incoming, tcp);
+-	daemon.add_die_stream(tcp, true, (char *)"tcplistener");
+-    }
+-    
+-    if (enable_ssl)
+-    {
+-	daemon.log(WvLog::Debug, "Generating SSL certificate.\n");
+-	if (x509)
+-	    WVRELEASE(x509);
+-	x509 = new WvX509Mgr("jfauthd", 2048);
+-	
+-	WvTCPListener *ssl = new WvTCPListener(5479);
+-	ssl->setcallback(ssl_incoming, ssl);
+-	daemon.add_die_stream(ssl, true, (char *)"ssllistener");
++	tcp->onaccept(wv::bind(tcp_incoming, (void *)tcp, _1));
++	_daemon->add_die_stream(tcp, true, (char *)"tcplistener");
+     }
+     
+     if (enable_unix)
+@@ -456,51 +447,51 @@ static void startup(WvStreamsDaemon &dae
+ 	mkdirp("/var/run/jfauthd", 0755);
+ 	WvUnixListener *unixl = new WvUnixListener(JF_UNIX_SOCKFILE, 0666);
+ 	chmod(JF_UNIX_SOCKFILE, 0666);
+-	unixl->setcallback(unix_incoming, unixl);
+-	daemon.add_die_stream(unixl, true, (char *)"unixlistener");
++	unixl->onaccept(wv::bind(unix_incoming, (void *)unixl, _1));
++	_daemon->add_die_stream(unixl, true, (char *)"unixlistener");
+     }
+ }
+ 
+ 
+ int main(int argc, char **argv)
+ {
+-    WvStreamsDaemon daemon("jfauthd", jfversion, startup);
+-    
+-    daemon.args.add_option
++    my_daemon = new WvStreamsDaemon("jfauthd", jfversion, wv::bind(startup, wv::ref(my_daemon)));
++
++    my_daemon->args.add_option
+ 	('f', "forward", "Forward all requests to a remote jfauthd",
+ 	 "HOST:PORT", forwardhost);
+-    daemon.args.add_option
++    my_daemon->args.add_option
+ 	('n', "name", "Change the PAM appname (default is 'jfauthd')",
+ 	 "APPNAME", appname);
+     
+-    daemon.args.add_set_bool_option
++    my_daemon->args.add_set_bool_option
+ 	(0, "smbpasswd", "Auto-update smbpasswd on successful auth",
+ 	 do_smbpasswd);
+     
+-    daemon.args.add_option
++    my_daemon->args.add_option
+ 	(0, "cache-time",
+ 	 "Time to cache successful authentications for use when "
+ 	 "forwarding server is broken (0=disable, -1=forever), "
+ 	 "default is -1",
+ 	 "SECONDS", cache_expire_secs);
+-    daemon.args.add_option
++    my_daemon->args.add_option
+ 	(0, "accel-time",
+ 	 "Time to cache successful authentications just to speed things up "
+ 	 "(0=disable, -1=forever), default is 60",
+ 	 "SECONDS", cache_accel_secs);
+-    daemon.args.add_option
++    my_daemon->args.add_option
+ 	(0, "cache-size",
+ 	 "Max number of users in the auth cache (default=100)",
+ 	 "NUMUSERS", cache_max_size);
+     
+     
+-    daemon.args.add_set_bool_option
++    my_daemon->args.add_set_bool_option
+ 	('u', "unix", WvString("Listen on unix socket %s",
+ 			       JF_UNIX_SOCKFILE), enable_unix);
+-    daemon.args.add_set_bool_option
++    my_daemon->args.add_set_bool_option
+ 	('t', "tcp", "[DANGER INSECURE] Listen on tcp port 5478", enable_tcp);
+-    daemon.args.add_set_bool_option
++    my_daemon->args.add_set_bool_option
+ 	('s', "ssl", "Listen on tcp-ssl port 5479 (encrypted)", enable_ssl);
+     
+-    return daemon.run(argc, argv);
++    return my_daemon->run(argc, argv);
+ }

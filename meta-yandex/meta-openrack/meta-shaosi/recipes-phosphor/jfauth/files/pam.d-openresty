@@ -1,0 +1,6 @@
+#%PAM-1.0
+
+auth	[success=1 default=ignore]	pam_jfauth.so nullok_secure
+auth	requisite			pam_deny.so
+auth	required			pam_permit.so
+account  include  common-account

@@ -1,0 +1,11 @@
+[Unit]
+Description=PAM auth daemon
+After=network.target
+[Service]
+Type=forking
+Restart=always
+PIDFile=/run/jfauthd.pid
+ExecStart=/usr/sbin/jfauthd -d -u
+[Install]
+WantedBy=multi-user.target
+
