@@ -117,7 +117,8 @@ do_install () {
         fi
 
 	# Cleanup
-	rm -rf ${D}/usr/pod ${D}/usr/site ${D}/usr/resty.index ${D}/usr/bin
+	rm -rf ${D}/usr/pod ${D}/usr/site ${D}/usr/resty.index ${D}${bindir} \
+		${D}${datadir}/lua/5.1/resty/random.lua
 }
 
 pkg_postinst_${PN} () {
