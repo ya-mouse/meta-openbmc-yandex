@@ -25,6 +25,6 @@ FILES_${PN} += "${datadir}${luadir}/*.lua \
     ${datadir}${luadir}/openbmc/*.lua \
 "
 
-RDEPENDS_${PN} = " lua-struct lua-nixio lua-pam"
+RDEPENDS_${PN} = " lua-struct lua-nixio lua-pam lua-resty-random lua-resty-stack"
 
 inherit allarch
