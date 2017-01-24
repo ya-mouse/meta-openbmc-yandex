@@ -38,7 +38,7 @@
 -            route = services[service..'/'..action]
 -            arg.id = sub(path, from, to)
 +    local mpath, rs, v, route
-+    for rs, v in pairs(services) do
++    for rs, v in ipairs(services) do
 +        local err
 +        mpath, err = re_match(method..':'..path, rs, 'jo')
 +        if mpath ~= nil then
