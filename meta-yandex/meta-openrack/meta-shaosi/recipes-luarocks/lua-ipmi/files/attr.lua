@@ -11,6 +11,10 @@ function _M.get(self)
 
     local ok = ldbus.call('GetObject', function(obj)
         local k, v, ifaces
+        if type(obj) ~= 'table' then
+            res = obj
+            return
+        end
         for k, v in pairs(obj) do
             oid = k
             ifaces = v

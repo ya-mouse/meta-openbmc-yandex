@@ -1,11 +1,11 @@
 local _M = { AUTHORIZE = true }
 
 function _M.get(self)
-    return 'get:'..tostring(self.match.path)
+    return 'get:'..tostring(self.match.paths)
 end
 
 function _M.post(self)
-    return 'POST:'..tostring(self.match.path)..':'..tostring(self.match.prop)
+    return 'POST:'..tostring(self.match.paths)
 end
 
 return _M
