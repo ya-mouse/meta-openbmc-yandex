@@ -1,0 +1,18 @@
+--- git/init.lua.orig	2017-01-17 19:32:53.000000000 +0300
++++ git/init.lua	2017-01-24 16:02:10.144689640 +0300
+@@ -189,6 +189,15 @@ function dbus.property.get(name, callbac
+ end
+ 
+ 
++function dbus.property.getall(callback, opts)
++    opts = opts or {}
++    opts.args = {'s', opts.interface} -- actual arguments to GetAll
++    opts.interface = 'org.freedesktop.DBus.Properties'
++    callback = callback or opts.callback
++    return dbus.call('GetAll', callback, opts)
++end
++
++
+ function dbus.property.set(name, value, opts)
+     opts = opts or {}
+     opts.args = {'s', opts.interface, 's', name, 'v', value} -- actual arguments to Get

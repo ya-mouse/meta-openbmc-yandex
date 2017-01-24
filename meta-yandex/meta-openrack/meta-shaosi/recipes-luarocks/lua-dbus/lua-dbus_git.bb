@@ -9,6 +9,7 @@ LIC_FILES_CHKSUM = "file://${WORKDIR}/LICENSE;md5=c9d0cd0a1fddeb5c3cecce737c04d8
 PR = "r0"
 
 SRC_URI = "git://github.com/dodo/lua-dbus.git \
+           file://getall.patch \
            file://LICENSE \
 "
 SRCREV = "${AUTOREV}"
