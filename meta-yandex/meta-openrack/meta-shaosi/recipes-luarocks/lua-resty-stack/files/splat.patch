@@ -10,7 +10,17 @@
  local HTTP_OK = ngx.HTTP_OK
  local HTTP_NOT_FOUND = ngx.HTTP_NOT_FOUND
  local HTTP_UNAUTHORIZED = ngx.HTTP_UNAUTHORIZED
-@@ -86,7 +88,7 @@ local function router(self, path, servic
+@@ -39,7 +41,8 @@ function _M.new(self, config)
+     return setmetatable({
+         post = post,
+         config = config,
+-        services = {}
++        services = {},
++        order = {}
+     }, mt)
+ end
+ 
+@@ -86,7 +89,7 @@ local function router(self, path, servic
      local auth = service.AUTHORIZE
      for m,o in pairs(service) do
          local mt = type(o)
@@ -19,7 +29,32 @@
          local authorize = auth == true or auth and auth[m]
          if mt == 'function' then
              self.services[mp] = { service = o, authorize = authorize }
-@@ -199,22 +201,17 @@ function _M.load(self, uri)
+@@ -104,6 +107,7 @@ function _M.use(self, path, fn, authoriz
+     -- validate path
+     local config = self.config
+     local services = self.services
++    local order = self.order
+     local tp = type(path)
+     if tp ~= 'string' then
+         authorize = fn
+@@ -127,6 +131,8 @@ function _M.use(self, path, fn, authoriz
+     elseif tf == 'string' then
+         router(self, path, require(fn))
+     end
++
++    table.insert(order, path)
+ end
+ 
+ -- default header and body render
+@@ -181,6 +187,7 @@ end
+ 
+ function _M.load(self, uri)
+     local services = self.services
++    local order = self.order
+     if not services then
+         return HTTP_NOT_FOUND
+     end
+@@ -199,22 +206,17 @@ function _M.load(self, uri)
      end
  
      -- check path or path/method
@@ -37,13 +72,13 @@
 -
 -            route = services[service..'/'..action]
 -            arg.id = sub(path, from, to)
-+    local mpath, rs, v, route
-+    for rs, v in pairs(services) do
++    local mpath, rs, route
++    for _, rs in ipairs(order) do
 +        local err
-+        mpath, err = re_match(method..':'..path, rs, 'jo')
++        mpath, err = re_match(path, rs, 'jo')
 +        if mpath ~= nil then
 +            -- log(ERR, 'ERR['..method..':'..path..']'..tostring(rs)..'='..tostring(route))
-+            route = v
++            route = services[method..':'..rs]
 +            goto found
          end
      end
@@ -51,7 +86,7 @@
  
      if not route then
          return HTTP_NOT_FOUND
-@@ -230,7 +227,9 @@ function _M.load(self, uri)
+@@ -230,7 +232,9 @@ function _M.load(self, uri)
      local params = {
          authorize = route.authorize,
          config = self.config,
