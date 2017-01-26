@@ -11,6 +11,7 @@ function _M.get(self)
 
     local ok = ldbus.call('GetObject', function(obj)
         local k, v, ifaces
+        run = 0
         if type(obj) ~= 'table' then
             res = obj
             return
@@ -19,7 +20,6 @@ function _M.get(self)
             oid = k
             ifaces = v
         end
-        run = 0
         for _, v in ipairs(ifaces) do
             ok = dbus.property.getall(function(...)
                 local k1, v2
