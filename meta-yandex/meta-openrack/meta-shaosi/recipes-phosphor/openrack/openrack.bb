@@ -31,4 +31,26 @@ do_install() {
         install -m 0755 ${WORKDIR}/setup-CB ${D}/usr/share/openrack/setup-vlan-CB
 }
 
-FILES_${PN} += " /etc/overlays /etc/default /etc/systemd /usr/share/openrack /usr/sbin /usr/share/lua/5.1 "
+pkg_postinst_${PN} () {
+OPTS=""
+
+if [ -n "$D" ]; then
+    OPTS="--root=$D"
+fi
+
+if type systemctl >/dev/null 2>/dev/null; then
+	systemctl $OPTS enable obmc-overlay.service
+
+	if [ -z "$D" -a "enable" = "enable" ]; then
+		systemctl restart obmc-overlay.service
+	fi
+fi
+}
+
+FILES_${PN} += "${sysconfdir}/overlays \
+                ${sysconfdir}/default \
+                ${systemd_unitdir}/system/obmc-overlay.service \
+                ${datadir}/openrack \
+                ${sbindir} \
+                ${datadir}/lua/5.1 \
+"
