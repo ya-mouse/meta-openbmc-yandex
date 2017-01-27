@@ -179,6 +179,13 @@ static void ipmi_i2c_send(void *send_info, struct ipmi_smi_msg *msg)
 	dev_dbg(&smi->client->dev, "%s: ipmi_send(%02x, %02x, %u %u)\n", __func__,
 			ipmb_msg->netfn, ipmb_msg->cmd, msg->data_size, size);
 	smi->buf_off = 0;
+
+	rc = i2c_smbus_write_i2c_block_data(smi->client,
+					    smi->msg->raw[1],
+					    size,
+					    smi->msg->raw + 2);
+	dev_dbg(&smi->client->dev, "%s:  -> %d\n", __func__, rc);
+
 	//mod_timer(&smi->timer, jiffies + IPMI_TIMEOUT_JIFFIES);
 	del_timer_sync(&smi->timer);
 	smi->timer.expires = jiffies + IPMI_TIMEOUT_JIFFIES;
@@ -187,12 +194,6 @@ static void ipmi_i2c_send(void *send_info, struct ipmi_smi_msg *msg)
 
 	/* on timeout cur_msg will be used for error reply */
 	smi->cur_msg = msg;
-
-	rc = i2c_smbus_write_i2c_block_data(smi->client,
-					    smi->msg->raw[1],
-					    size,
-					    smi->msg->raw + 2);
-	dev_dbg(&smi->client->dev, "%s:  -> %d\n", __func__, rc);
 
 	if (!rc) {
 		spin_unlock_irqrestore(&smi->msg_lock, flags);
@@ -275,8 +276,15 @@ static int ipmi_i2c_recv(struct ipmi_smi_i2c *smi)
 	}
 
 	if (size < sizeof(*ipmb_msg)) {
+		int i;
 		spin_unlock_irqrestore(&smi->msg_lock, flags);
 		pr_warn("unexpected IPMI message size %u\n", size);
+		for (i=0; i<smi->buf_off; i++) {
+			printk("%02x ", smi->msg->raw[i]);
+			if (i && !(i % 16))
+				printk("\n");
+		}
+		printk("\n");
 		return 0;
 	}
 
@@ -355,6 +363,7 @@ static void ipmi_i2c_request_events(void *send_info)
 static void ipmi_i2c_set_run_to_completion(void *send_info,
 		bool run_to_completion)
 {
+	printk("\n\nSET RUN TO COMPLETION: %d\n\n", run_to_completion);
 }
 
 static void ipmi_i2c_poll(void *send_info)
