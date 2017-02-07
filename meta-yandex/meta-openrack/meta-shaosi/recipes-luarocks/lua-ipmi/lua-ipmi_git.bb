@@ -32,6 +32,6 @@ FILES_${PN} += "${datadir}${luadir}/*.lua \
     ${datadir}${luadir}/openbmc/api/*.lua \
 "
 
-RDEPENDS_${PN} = " lua-struct lua-nixio lua-pam lua-resty-random lua-resty-stack lua-resty-cookie "
+RDEPENDS_${PN} = " lua-struct lua-nixio lua-pam lua-resty-random lua-resty-stack lua-resty-cookie lua-uloop "
 
 inherit allarch
