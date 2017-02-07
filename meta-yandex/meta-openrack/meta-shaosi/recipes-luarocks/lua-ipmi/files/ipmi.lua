@@ -161,6 +161,7 @@ function _L.new(self, sock, user, passwd, cmds, authtype)
         _reqauth = authtype or 2,
     }
 
+    t._sdr_read_cb = t._cmds['sdr_read']
     local obj = setmetatable(t, L_mt)
     obj:_initsession()
     return obj
@@ -490,11 +491,12 @@ function _L._get_product_id(self)
 end
 
 function _L._got_product_id(self, response)
+    if #response < 18 then return false end
+
     self._ver = stunpack('>H', sub(response, 10, 11))
     self._mfg = stunpack('<I', sub(response, 14, 16) .. '\x00')
     self._prod = stunpack('<H', sub(response, 17, 18))
     self._builtin_sdr = band(byte(response, 9), 0x80) == 0x80 and band(byte(response, 13), 0x03) == 0x01
-    print(self._ver, self._mfg, self._prod, self._builtin_sdr)
 
     if self._builtin_sdr then
         --            Func  Rec   Cnt   Rsvd
@@ -519,6 +521,7 @@ function _L._get_sdr_info(self)
 end
 
 function _L._got_sdr_info(self, repo)
+    if #repo < 10 then return false end
     self._sdr[3] = stunpack('<H', sub(repo, 9, 10))
     self._send = _L._get_sdr_reserve
     return true
@@ -530,6 +533,8 @@ function _L._get_sdr_reserve(self)
 end
 
 function _L._got_sdr_reserve(self, response)
+    if #response < 9 then return false end
+
     if byte(response, 7) ~= 0 then
         self._logged = true
         self._send = false
@@ -644,7 +649,7 @@ function _L._next_sdr_or_ready(self)
         self._sdr_cached = true
         self._logged = true
         self._send = false
-        print('READY!')
+        -- print('READY!')
     else
         self._send = _L._get_sdr_header
     end
@@ -652,7 +657,9 @@ end
 
 function _L._cmd_got_sensor_reading(self, resp)
     if not (byte(resp, 7) == 0 and band(byte(resp, 9), 0x20) ~= 0x20 and band(byte(resp, 9), 0x40) == 0x40) then
-        print('RESULT: ', self._cmds[self._cmdidx+1][5], 'na')
+        if self._sdr_read_cb ~= nil then
+            self:_sdr_read_cb(self._cmds[self._cmdidx+1][5], 'na')
+        end
         return true
     end
 
@@ -671,7 +678,9 @@ function _L._cmd_got_sensor_reading(self, resp)
     end
 
     local result = ((m * val) + (b * pow(10, k1))) * pow(10, k2)
-    print('RESULT: ', name, result)
+    if self._sdr_read_cb ~= nil then
+        self:_sdr_read_cb(name, result)
+    end
 
     return true
 end
@@ -741,6 +750,7 @@ function _O.new(self, devnum, cmds)
     }
     if not t.f then return end
 
+    t._sdr_read_cb = t._cmds['sdr_read']
     getmetatable(t.f).getfd = function(self) return tonumber(tostring(self):sub(12)) end
 
     local i = ffi.new('int[1]', 0)
