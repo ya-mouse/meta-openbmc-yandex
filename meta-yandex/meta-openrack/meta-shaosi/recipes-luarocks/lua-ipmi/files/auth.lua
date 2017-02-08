@@ -68,7 +68,7 @@ function _M.login(self)
          local expires = cookie_time(time() + 3600 * 24) -- 1 day
          local cookie, err = ck:new()
          sess_db:set(sid, '{ login: "'..login..'", group: "root" }', time() + 3600 * 24)
-         local ok, err = cookie:set({ key = 'sid', value = sid, secure = true, samesize = 'Strict' }) -- , expires = expires })
+         local ok, err = cookie:set({ key = 'sid', value = sid, secure = false, samesize = 'Strict' }) -- , expires = expires })
          return cjson_encode({ data = "User '"..login.."' logged in" })
     else
          ngx.exit(401)

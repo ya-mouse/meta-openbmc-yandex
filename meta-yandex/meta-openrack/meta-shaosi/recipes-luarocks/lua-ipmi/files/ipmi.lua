@@ -157,11 +157,13 @@ function _L.new(self, sock, user, passwd, cmds, authtype)
         _kg = passwd,
         _cmds = cmds or {},
         _sdr_cmds = {},
+        _sdr_names = {},
         _sdr_cached = false,
         _reqauth = authtype or 2,
     }
 
     t._sdr_read_cb = t._cmds['sdr_read']
+    t._ready_cb = t._cmds['ready']
     local obj = setmetatable(t, L_mt)
     obj:_initsession()
     return obj
@@ -521,7 +523,10 @@ function _L._get_sdr_info(self)
 end
 
 function _L._got_sdr_info(self, repo)
-    if #repo < 10 then return false end
+    if #repo < 10 then
+        if self._DEBUG then print('_L._got_sdr_info fail') end
+        return false
+    end
     self._sdr[3] = stunpack('<H', sub(repo, 9, 10))
     self._send = _L._get_sdr_reserve
     return true
@@ -536,9 +541,10 @@ function _L._got_sdr_reserve(self, response)
     if #response < 9 then return false end
 
     if byte(response, 7) ~= 0 then
-        self._logged = true
-        self._send = false
-        return true
+--        self._logged = true
+--        self._send = false
+        if self._DEBUG then print('_L._got_sdr_reserve fail') end
+        return false
     end
     self._sdr[4] = stunpack('<H', sub(response, 8, 9))
     self._sdr_recid = 0
@@ -556,12 +562,9 @@ end
 
 function _L._got_sdr_header(self, header)
     if byte(header, 7) ~= 0 or #header < 14 then
-        --
-        -- TODO: should we retry several times before give up?
-        --
-        self._send = false
-        self._logged = true
-        return true
+        -- self._logged = true
+        if self._DEBUG then print('c_L._got_sdr_header fail') end
+        return false
     end
 
     self._sdr_nextid = stunpack('<H', sub(header, 8, 9))
@@ -586,6 +589,7 @@ function _L._got_sdr_record(self, record)
     local b18 = byte(record, 18)
     if #record < 55 or (b18 ~= 0x01 and b18 ~= 0x04 and b18 ~= 0x08) then
         _L._next_sdr_or_ready(self)
+        if self._DEBUG then print('_L._next_sdr_or_ready') end
         return true
     end
     local size = band(byte(record, 52), 0x1f)
@@ -630,6 +634,7 @@ function _L._got_sdr_record(self, record)
         -- __TO_B_EXP
         tos32(band(bacc, 0xf), 4)
     })
+    table.insert(self._sdr_names, name)
 
     _L._next_sdr_or_ready(self)
     return true
@@ -649,7 +654,8 @@ function _L._next_sdr_or_ready(self)
         self._sdr_cached = true
         self._logged = true
         self._send = false
-        -- print('READY!')
+        if self._ready_cb then self:_ready_cb() end
+        if self._DEBUG then print('READY!') end
     else
         self._send = _L._get_sdr_header
     end
@@ -657,9 +663,10 @@ end
 
 function _L._cmd_got_sensor_reading(self, resp)
     if not (byte(resp, 7) == 0 and band(byte(resp, 9), 0x20) ~= 0x20 and band(byte(resp, 9), 0x40) == 0x40) then
-        if self._sdr_read_cb ~= nil then
-            self:_sdr_read_cb(self._cmds[self._cmdidx+1][5], 'na')
-        end
+--        if self._sdr_read_cb ~= nil then
+--            self:_sdr_read_cb(self._cmds[self._cmdidx+1][5], 'na')
+--        end
+--        print('_L._cmd_got_sensor_reading fail')
         return true
     end
 
@@ -742,6 +749,7 @@ function _O.new(self, devnum, cmds)
         _cmds = cmds or { },
         _cmdidx = 0,
         _sdr_cmds = { },
+        _sdr_names = { },
         _sdr_cached = false,
         _stopped = true,
         _logged = false,
@@ -751,6 +759,7 @@ function _O.new(self, devnum, cmds)
     if not t.f then return end
 
     t._sdr_read_cb = t._cmds['sdr_read']
+    t._ready_cb = t._cmds['ready']
     getmetatable(t.f).getfd = function(self) return tonumber(tostring(self):sub(12)) end
 
     local i = ffi.new('int[1]', 0)
@@ -768,6 +777,10 @@ function _O.new(self, devnum, cmds)
     t.req.msgid = 1
 
     return setmetatable(t, O_mt)
+end
+
+function _O.prettyinfo(self, fp)
+    return self._fpn[fp]
 end
 
 function _O._send_payload(self, netfn, command, ...)
@@ -789,7 +802,7 @@ function _O._send_payload(self, netfn, command, ...)
     self.req.msg.netfn = netfn
     self.req.msg.cmd = command
 
---    print('>>>>', netfn, command, nixio.bin.hexlify(reqbody))
+    if self._DEBUG then print('>>>>>', netfn, command, nixio.bin.hexlify(reqbody), self:prettyinfo(self._send), self:prettyinfo(self._recv), self._cmdidx) end
     local ret = _ioctl(self.f, IPMICTL_SEND_COMMAND, self.req)
     return ret
 end
@@ -807,7 +820,8 @@ function _O.recv(self)
     -- unset receive function
     local fn = self._recv
     self._recv = false
---    print('<<<<<', nixio.bin.hexlify(payload))
+
+    if self._DEBUG then print('<<<<<', nixio.bin.hexlify(payload), self:prettyinfo(self._send), self:prettyinfo(self._recv), self._cmdidx) end
     return fn(self, string.rep('\x00', 6)..payload)
 end
 
@@ -824,6 +838,22 @@ function _O._process_next_cmd(self)
         return self:_send_payload(cmd[2], cmd[3], cmd[4])
     else
         return self:_send_payload(cmd[2], cmd[3])
+    end
+end
+
+_L._fpn = {}
+_O._fpn = {}
+local k, v
+for k, v in pairs(_L) do
+    if type(v) == 'function' then
+        _L._fpn[v] = k
+        _O._fpn[v] = k
+    end
+end
+
+for k, v in pairs(_O) do
+    if type(v) == 'function' then
+        _O._fpn[v] = k
     end
 end
 
