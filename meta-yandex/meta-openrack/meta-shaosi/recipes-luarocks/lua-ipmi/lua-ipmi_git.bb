@@ -23,7 +23,7 @@ luadir = "/lua/5.1"
 do_install () {
     install -d ${D}${datadir}${luadir}/openbmc/api
     install -m 644 ${WORKDIR}/ipmi.lua ${D}${datadir}${luadir}/ipmi.lua
-    install -m 755 ${WORKDIR}/shaosid.lua ${D}${sbindir}/shaosid
+    install -m 755 -pD ${WORKDIR}/shaosid.lua ${D}${sbindir}/shaosid
     for f in api api/attr api/storage api/proc auth; do
         install -m 644 ${WORKDIR}/$f.lua ${D}${datadir}${luadir}/openbmc/$f.lua
     done
