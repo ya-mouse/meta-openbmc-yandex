@@ -680,7 +680,8 @@ end
 
 function _L._cmd_got_sensor_reading(self, resp)
     if #resp < 9 then
-        return true
+        -- Retry on timeout
+        return #resp ~= 7 or byte(resp, 7) ~= 0xc3
     end
 
     if not (byte(resp, 7) == 0 and band(byte(resp, 9), 0x20) ~= 0x20 and band(byte(resp, 9), 0x40) == 0x40) then
@@ -800,6 +801,10 @@ function _O.new(self, devnum, cmds)
     t.rsp.msg.data = t.req.d
 
     return setmetatable(t, O_mt)
+end
+
+function _O.close(self)
+    self.f.close()
 end
 
 function _O.prettyinfo(self, fp)
