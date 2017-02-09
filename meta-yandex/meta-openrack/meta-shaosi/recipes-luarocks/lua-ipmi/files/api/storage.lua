@@ -42,13 +42,22 @@ function _M.post(self)
     if not js then return cjson_encode({ status = 'fail', message = '400 BAD', error = err }) end
 
     if self.match.key ~= nil then
-        local msg = store_db:set(self.match.key, js)
+        local msg
+        if type(js) == 'table' then
+            msg = store_db:set(self.match.key, js['value'], js['duration'] or 0.0)
+        else
+            msg = store_db:set(self.match.key, js)
+        end
         return cjson_encode({ status = 'ok', message = '200 OK', msg = tostring(msg) })
     end
 
     local k, v
     for k, v in pairs(js) do
-        local e = store_db:set(k, v)
+        if type(v) == 'table' then
+           local e = store_db:set(k, v['value'], v['duration'] or 0.0)
+        else
+           local e = store_db:set(k, v)
+        end
     end
 
     return cjson_encode({ status = 'ok', message = '200 OK' })
