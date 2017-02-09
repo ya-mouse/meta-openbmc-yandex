@@ -82,7 +82,7 @@ local db_que = {}
 local ipmi_cmds
 ipmi_cmds = {
     { function(self, response)
-        print('SESS INFO', response:byte(7), self._ver, self._mfg, self._prod, self._builtin_sdr)
+        print('SESS INFO:'..tostring(self.n), response:byte(7), self._ver, self._mfg, self._prod, self._builtin_sdr)
     end, 0x6, 0x3d },
 
     sdr_read = function(self, name, value)
@@ -92,7 +92,7 @@ ipmi_cmds = {
     end,
 
     ready = function(self)
-        print('READY', cjson_encode(self._sdr_names))
+        print('READY '..tostring(self.n), cjson_encode(self._sdr_names))
         db_resty:request(self.n, '__index__', cjson_encode(self._sdr_names))
     end
 }
@@ -103,22 +103,27 @@ if sock then
     ipmi_ev[sock:getfd()] = ipmi.lan:new(sock, 'ADMIN', 'ADMIN', ipmi_cmds)
     ipmi_ev[sock:getfd()]:send()
 else
-    local oip = ipmi.open:new(6, ipmi_cmds)
-    sock = oip.f
+    for i=2,5 do
+      local oip = ipmi.open:new(i, ipmi_cmds)
+      sock = oip.f
+      print(sock:getfd())
+--      oip._DEBUG = true
 
-    ipmi_ev[sock:getfd()] = oip
-    ipmi_ev[sock:getfd()]:send()
-end
+      ipmi_ev[sock:getfd()] = oip
+      ipmi_ev[sock:getfd()]:send()
 
-local u = uloop.fd_add(sock, function(ufd, events)
-    local icli = ipmi_ev[ufd:getfd()]
-    if icli then
-        icli:recv()
-        if not icli._logged or not icli._stopped then
-            icli:send()
+      local u = uloop.fd_add(sock, function(ufd, events)
+        local icli = ipmi_ev[ufd:getfd()]
+        if icli then
+           icli:recv()
+           if not icli._logged or not icli._stopped then
+               icli:send()
+           end
         end
+      end, uloop.ULOOP_READ)
+      ipmi_ev[sock:getfd()]._u = u
     end
-end, uloop.ULOOP_READ)
+end
 
 function resty_event(ufd, events)
     local d = ufd:read(4096)
