@@ -83,6 +83,19 @@ end
 local db_que = {}
 
 local ipmi_cmds
+local ipmi_sdr_ttl = {
+  NVME_0_TEMP = 30,
+  NVME_1_TEMP = 30,
+  NVME_2_TEMP = 30,
+  NVME_3_TEMP = 30,
+  SATA3_TEMP = 30,
+  SATA4_TEMP = 30,
+  SATA7_TEMP = 30,
+  SATA8_TEMP = 30,
+  SIO_TEMP_1 = 30,
+  SIO_TEMP_2 = 30,
+}
+
 ipmi_cmds = {
     { function(self, response)
         -- print('SESS INFO:'..tostring(self.n), response:byte(7), self._ver, self._mfg, self._prod, self._builtin_sdr)
@@ -91,7 +104,7 @@ ipmi_cmds = {
     sdr_read = function(self, name, value)
         db_que[name] = value
         if self._DEBUG then print('GOT READ: ', self.n, name, value) end
-        db_resty:request(self.n, name, value)
+        db_resty:request(self.n, name, { value = value, duration = ipmi_sdr_ttl[name] })
     end,
 
     ready = function(self)
