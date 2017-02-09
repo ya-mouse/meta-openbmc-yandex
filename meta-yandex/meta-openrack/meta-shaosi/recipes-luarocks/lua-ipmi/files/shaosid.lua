@@ -13,6 +13,8 @@ local sub = string.sub
 local byte = string.byte
 local band = bit.band
 
+local board_number = nixio.open('/etc/openrack-board'):read(16):sub(1, -2)
+
 uloop.init()
 
 local pollgpio = { }
@@ -68,51 +70,37 @@ for i, n in pairs(nodegpio) do
 end
 
 local ipmi_ev = {}
+local ipmi_devs = {}
 -- local sock, code, err = nixio.connect('2a02:6b8:0:2e0d:ffff:0:a0f:fe6c', 623)
 
 local db_resty = nixio.socket('unix', 'stream')
-print('CONNECT', db_resty:connect('/run/openresty/socket'))
+if not db_resty:connect('/run/openresty/socket') then exit(-1) end
 getmetatable(db_resty).getfd = function(self) return tonumber(tostring(self):sub(13)) end
 getmetatable(db_resty).request = function(self, devnum, name, value)
     local body = cjson_encode({ data = value })
-    db_resty:write('POST /api/storage/CB-1/'..tostring(devnum)..'/'..name.." HTTP/1.1\r\nUser-Agent: collector/1.0\r\nAccept: */*\r\nHost: localhost\r\nContent-type: application/json\r\nConnection: keep-alive\r\nContent-Length: "..#body.."\r\n\r\n"..body.."\r\n\r\n")
+    db_resty:write('POST /api/storage/'..board_number..'/'..tostring(devnum)..'/'..name.." HTTP/1.1\r\nUser-Agent: collector/1.0\r\nAccept: */*\r\nHost: localhost\r\nContent-type: application/json\r\nConnection: keep-alive\r\nContent-Length: "..#body.."\r\n\r\n"..body.."\r\n\r\n")
 end
 local db_que = {}
 
 local ipmi_cmds
 ipmi_cmds = {
     { function(self, response)
-        print('SESS INFO:'..tostring(self.n), response:byte(7), self._ver, self._mfg, self._prod, self._builtin_sdr)
+        -- print('SESS INFO:'..tostring(self.n), response:byte(7), self._ver, self._mfg, self._prod, self._builtin_sdr)
     end, 0x6, 0x3d },
 
     sdr_read = function(self, name, value)
         db_que[name] = value
-        print('GOT READ: ', name, value)
+        if self._DEBUG then print('GOT READ: ', self.n, name, value) end
         db_resty:request(self.n, name, value)
     end,
 
     ready = function(self)
-        print('READY '..tostring(self.n), cjson_encode(self._sdr_names))
+        if self._DEBUG then print('READY '..tostring(self.n), cjson_encode(self._sdr_names)) end
         db_resty:request(self.n, '__index__', cjson_encode(self._sdr_names))
     end
 }
 
-if sock then
-    getmetatable(sock).getfd = function(self) return tonumber(tostring(self):sub(14)) end
-
-    ipmi_ev[sock:getfd()] = ipmi.lan:new(sock, 'ADMIN', 'ADMIN', ipmi_cmds)
-    ipmi_ev[sock:getfd()]:send()
-else
-    for i=2,5 do
-      local oip = ipmi.open:new(i, ipmi_cmds)
-      sock = oip.f
-      print(sock:getfd())
---      oip._DEBUG = true
-
-      ipmi_ev[sock:getfd()] = oip
-      ipmi_ev[sock:getfd()]:send()
-
-      local u = uloop.fd_add(sock, function(ufd, events)
+function ipmi_uloop_cb(ufd, events)
         local icli = ipmi_ev[ufd:getfd()]
         if icli then
            icli:recv()
@@ -120,9 +108,28 @@ else
                icli:send()
            end
         end
-      end, uloop.ULOOP_READ)
-      ipmi_ev[sock:getfd()]._u = u
-    end
+end
+
+--    ipmi_ev[sock:getfd()] = ipmi.lan:new(sock, 'ADMIN', 'ADMIN', ipmi_cmds)
+
+function ipmi_add(devnum)
+    local oip = ipmi.open:new(devnum, ipmi_cmds)
+    local ufd = oip.f:getfd()
+    ipmi_ev[ufd] = oip
+    ipmi_devs[devnum] = ufd
+    -- oip._DEBUG = true
+
+    local u = uloop.fd_add(oip.f, ipmi_uloop_cb, uloop.ULOOP_READ)
+    oip._u = u
+    oip:send()
+end
+
+function ipmi_del(devnum)
+    local ufd = ipmi_devs[devnum]
+    local oip = ipmi_ev[ufd]
+    oip:close()
+    ipmi_ev[ufd] = nil
+    ipmi_devs[devnum] = nil 
 end
 
 function resty_event(ufd, events)
@@ -139,8 +146,6 @@ function resty_event(ufd, events)
 end
 
 local r = uloop.fd_add(db_resty, resty_event, uloop.ULOOP_READ + 0x40)
-
-print('ULOOP', u, r)
 
 local sdr_timer
 local dtoverlay_support = true
@@ -173,6 +178,7 @@ sdr_timer = uloop.timer(function()
                 local name
                 i, name = v:match('^(%d+)_(.+)$')
                 if name == overlay then break end
+                i = -1
             end
 
             -- Compact actions by removing duplicate add/remove
@@ -200,16 +206,18 @@ sdr_timer = uloop.timer(function()
             if not action_add then
                 if i ~= -1 then
                     args = { '-r', i }
+                    ipmi_del(k-1)
                 end
             elseif i == -1 then
                 -- Run when no same overlay loaded
                 args = { overlay }
+                ipmi_add(k-1)
             end
 
             -- Lock and run
             if args then
                 overlay_lock[k] = true
-                uloop.process('echo /usr/bin/dtoverlay', args, { NODE = k }, function(ret)
+                uloop.process('/usr/bin/dtoverlay', args, { NODE = k }, function(ret)
                     -- if ret == 0 then hwmon:load() end
                     overlay_lock[k] = false
                 end)
