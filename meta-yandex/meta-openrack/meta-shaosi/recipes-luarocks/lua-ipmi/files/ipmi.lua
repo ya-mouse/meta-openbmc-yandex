@@ -75,12 +75,23 @@ ffi.cdef[[
       uint8_t *data;
    };
 
+   typedef struct {
+      struct ipmi_msg;
+      uint8_t d[?];
+   } ipmi_msg;
+
    struct ipmi_req {
       uint8_t *addr;
       uint32_t addr_len;
       long msgid;
       struct ipmi_msg msg;
    };
+
+   typedef struct {
+      struct ipmi_req;
+      uint8_t a[32];
+      uint8_t d[?];
+   } ipmi_req;
 
    struct ipmi_recv {
       int recv_type;
@@ -89,6 +100,12 @@ ffi.cdef[[
       long msgid;
       struct ipmi_msg msg;
    };
+
+   typedef struct {
+      struct ipmi_recv;
+      uint8_t a[32];
+      uint8_t d[?];
+   } ipmi_recv;
 
    struct ipmi_cmdspec {
       uint8_t netfn;
@@ -662,6 +679,10 @@ function _L._next_sdr_or_ready(self)
 end
 
 function _L._cmd_got_sensor_reading(self, resp)
+    if #resp < 9 then
+        return true
+    end
+
     if not (byte(resp, 7) == 0 and band(byte(resp, 9), 0x20) ~= 0x20 and band(byte(resp, 9), 0x40) == 0x40) then
 --        if self._sdr_read_cb ~= nil then
 --            self:_sdr_read_cb(self._cmds[self._cmdidx+1][5], 'na')
@@ -742,8 +763,8 @@ function _O.new(self, devnum, cmds)
     local t = {
         n = devnum,
         f = fopen('/dev/ipmi'..tonumber(devnum)),
-        req = ffi.new('struct ipmi_req'),
-        rsp = ffi.new('struct ipmi_recv'),
+        req = ffi.new('ipmi_req', 256),
+        rsp = ffi.new('ipmi_recv', 256),
         bmc_addr = ffi.new('struct ipmi_system_interface_addr[1]'),
         ipmb_addr = ffi.new('struct ipmi_ipmb_addr[1]'),
         _cmds = cmds or { },
@@ -771,10 +792,12 @@ function _O.new(self, devnum, cmds)
     t.bmc_addr[0].channel = IPMI_BMC_CHANNEL
     t.ipmb_addr[0].addr_type = IPMI_IPMB_ADDR_TYPE
 
-    t.rsp.addr = ffi.new('int8_t[32]')
-    t.rsp.msg.data = ffi.new('int8_t[256]')
-
+    t.req.addr = t.req.a
+    t.req.msg.data = t.req.d
     t.req.msgid = 1
+
+    t.rsp.addr = t.req.a
+    t.rsp.msg.data = t.req.d
 
     return setmetatable(t, O_mt)
 end
@@ -792,12 +815,12 @@ function _O._send_payload(self, netfn, command, ...)
         reqbody = stpack(string.rep('B', argc), ...)
     end
 
-    self.req.addr = ffi.cast('char *', self.bmc_addr)
+    ffi.copy(self.req.addr, self.bmc_addr, 32)
     self.req.addr_len = sizeof_ipmi_system_interface_addr
 
     self.req.msgid = self.req.msgid + 1
 
-    self.req.msg.data = ffi.cast('char *', reqbody)
+    ffi.copy(self.req.msg.data, reqbody)
     self.req.msg.data_len = #reqbody
     self.req.msg.netfn = netfn
     self.req.msg.cmd = command
