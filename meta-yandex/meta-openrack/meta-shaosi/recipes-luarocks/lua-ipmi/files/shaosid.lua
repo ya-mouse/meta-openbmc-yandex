@@ -14,6 +14,9 @@ local byte = string.byte
 local band = bit.band
 
 local board_number = nixio.open('/etc/openrack-board'):read(16):sub(1, -2)
+if board_number:sub(1, 3) ~= 'CB-' then
+     return
+end
 
 uloop.init()
 
