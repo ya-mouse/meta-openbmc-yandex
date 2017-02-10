@@ -28,7 +28,7 @@ function _M.get(self)
         local key, data
         data = {}
         for key in gmatch(inkey, '[^,]+') do
---            log(ERR, key)
+            -- log(ERR, key)
             data[key] = store_db:get(key)
         end
         return cjson_encode({ data = data, status = 'ok', message = '200 OK' })
@@ -60,6 +60,14 @@ function _M.post(self)
         end
     end
 
+    return cjson_encode({ status = 'ok', message = '200 OK' })
+end
+
+function _M.delete(self)
+    if self.match.key == nil then
+         return cjson_encode({ status = 'fail', message = '400 BAD', error = 'No key specified' })
+    end
+    store_db:delete(self.match.key)
     return cjson_encode({ status = 'ok', message = '200 OK' })
 end
 
