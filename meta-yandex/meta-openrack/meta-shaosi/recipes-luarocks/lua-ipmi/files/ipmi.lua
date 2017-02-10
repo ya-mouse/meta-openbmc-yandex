@@ -7,7 +7,7 @@ local fopen = nixio.open
 local hash = nixio.crypto.hash
 local stpack, stunpack = bin.pack, bin.unpack
 local bor, band, bxor, lshift, rshift = bit.bor, bit.band, bit.bxor, bit.lshift, bit.rshift
-local byte, sub = string.byte, string.sub
+local byte, sub, match = string.byte, string.sub, string.match
 local pow = math.pow
 
 local IOC = {
@@ -166,15 +166,17 @@ local _L = {
 
 local L_mt = { __index = _L }
 
-function _L.new(self, sock, user, passwd, cmds, authtype)
+function _L.new(self, sock, user, passwd, cmds, sdrs, authtype)
     local t = {
         _sock = sock,
         _user = user,
         _passwd = passwd,
         _kg = passwd,
         _cmds = cmds or {},
+        _sdrs = sdrs or {},
+        sdr_ttl = {},
+        sdr_names = {},
         _sdr_cmds = {},
-        _sdr_names = {},
         _sdr_cached = false,
         _reqauth = authtype or 2,
     }
@@ -612,9 +614,22 @@ function _L._got_sdr_record(self, record)
     local size = band(byte(record, 52), 0x1f)
     local name = sub(record, 53, 52+size):upper()
 
-    --
-    -- TODO: filter sensors by list
-    --
+    local m, duration, found
+    if next(self._sdrs) ~= nil then
+        for m, duration in pairs(self._sdrs) do
+            found = match(name, '^'..m..'$') ~= nil
+            if found then break end
+        end
+    else
+        duration = 0.0
+        found = true
+    end
+
+    -- No match, do not add
+    if not found then
+        _L._next_sdr_or_ready(self)
+        return true
+    end
 
     local tos32 = function(val, bits)
         if band(val, lshift(bits-1, 1)) ~= 0 then
@@ -651,7 +666,8 @@ function _L._got_sdr_record(self, record)
         -- __TO_B_EXP
         tos32(band(bacc, 0xf), 4)
     })
-    table.insert(self._sdr_names, name)
+    self.sdr_ttl[name] = duration
+    table.insert(self.sdr_names, name)
 
     _L._next_sdr_or_ready(self)
     return true
@@ -760,7 +776,7 @@ local _O = {
 
 local O_mt = { __index = _O }
 
-function _O.new(self, devnum, cmds)
+function _O.new(self, devnum, cmds, sdrs)
     local t = {
         n = devnum,
         f = fopen('/dev/ipmi'..tonumber(devnum)),
@@ -768,10 +784,12 @@ function _O.new(self, devnum, cmds)
         rsp = ffi.new('ipmi_recv', 256),
         bmc_addr = ffi.new('struct ipmi_system_interface_addr[1]'),
         ipmb_addr = ffi.new('struct ipmi_ipmb_addr[1]'),
+        sdr_ttl = { },
+        sdr_names = { },
         _cmds = cmds or { },
+        _sdrs = sdrs or { },
         _cmdidx = 0,
         _sdr_cmds = { },
-        _sdr_names = { },
         _sdr_cached = false,
         _stopped = true,
         _logged = false,
