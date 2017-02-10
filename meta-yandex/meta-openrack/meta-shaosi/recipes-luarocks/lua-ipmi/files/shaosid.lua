@@ -77,23 +77,28 @@ local db_resty = nixio.socket('unix', 'stream')
 if not db_resty:connect('/run/openresty/socket') then exit(-1) end
 getmetatable(db_resty).getfd = function(self) return tonumber(tostring(self):sub(13)) end
 getmetatable(db_resty).request = function(self, devnum, name, value)
+    -- TODO: keep values in array and post it independetly in coroutine
     local body = cjson_encode({ data = value })
-    db_resty:write('POST /api/storage/'..board_number..'/'..tostring(devnum)..'/'..name.." HTTP/1.1\r\nUser-Agent: collector/1.0\r\nAccept: */*\r\nHost: localhost\r\nContent-type: application/json\r\nConnection: keep-alive\r\nContent-Length: "..#body.."\r\n\r\n"..body.."\r\n\r\n")
+    if name ~= '' then name = '/'..name end
+    local body = 'POST /api/storage/'..board_number..'/'..tostring(devnum)..name.." HTTP/1.1\r\nUser-Agent: collector/1.0\r\nAccept: */*\r\nHost: localhost\r\nContent-type: application/json\r\nConnection: keep-alive\r\nContent-Length: "..#body.."\r\n\r\n"..body.."\r\n\r\n"
+    local cnt, errno, errmsg = db_resty:write(body)
+    if errno ~= nil then
+        -- print('RECONNECT', errno, errmsg)
+        db_resty:close()
+        db_resty = nixio.socket('unix', 'stream')
+        db_resty:connect('/run/openresty/socket')
+        uloop.fd_add(db_resty, resty_event, uloop.ULOOP_READ + 0x40)
+        if db_resty:write(body) == nil then print('WRITE failed') end
+    end
 end
 local db_que = {}
 
 local ipmi_cmds
-local ipmi_sdr_ttl = {
-  NVME_0_TEMP = 30,
-  NVME_1_TEMP = 30,
-  NVME_2_TEMP = 30,
-  NVME_3_TEMP = 30,
-  SATA3_TEMP = 30,
-  SATA4_TEMP = 30,
-  SATA7_TEMP = 30,
-  SATA8_TEMP = 30,
-  SIO_TEMP_1 = 30,
-  SIO_TEMP_2 = 30,
+local ipmi_sdrs = {
+  ['CPU[0-9]_TEMP'] = 0.0,
+  ['NVME_[0-9]_TEMP'] = 30,
+  ['SATA[0-9]_TEMP'] = 30,
+  ['SIO_TEMP_[0-9]'] = 30,
 }
 
 ipmi_cmds = {
@@ -101,15 +106,22 @@ ipmi_cmds = {
         -- print('SESS INFO:'..tostring(self.n), response:byte(7), self._ver, self._mfg, self._prod, self._builtin_sdr)
     end, 0x6, 0x3d },
 
+    { function(self, response)
+        if #response == 7 then return false end
+        db_resty:request(self.n, 'type', response:byte(8+3))
+        db_resty:request(self.n, 'rackid', response:sub(8+5, 8+14))
+        db_resty:request(self.n, 'slotid', response:byte(8+15))
+    end, 0x38, 0x30, 0 },
+
     sdr_read = function(self, name, value)
         db_que[name] = value
         if self._DEBUG then print('GOT READ: ', self.n, name, value) end
-        db_resty:request(self.n, name, { value = value, duration = ipmi_sdr_ttl[name] })
+        db_resty:request(self.n, name, { value = value, duration = self.sdr_ttl[name] })
     end,
 
     ready = function(self)
-        if self._DEBUG then print('READY '..tostring(self.n), cjson_encode(self._sdr_names)) end
-        db_resty:request(self.n, '__index__', cjson_encode(self._sdr_names))
+        if self._DEBUG then print('READY '..tostring(self.n), cjson_encode(self.sdr_names)) end
+        db_resty:request(self.n, '', cjson_encode(self.sdr_names))
     end
 }
 
@@ -126,7 +138,7 @@ end
 --    ipmi_ev[sock:getfd()] = ipmi.lan:new(sock, 'ADMIN', 'ADMIN', ipmi_cmds)
 
 function ipmi_add(devnum)
-    local oip = ipmi.open:new(devnum, ipmi_cmds)
+    local oip = ipmi.open:new(devnum, ipmi_cmds, ipmi_sdrs)
     local ufd = oip.f:getfd()
     ipmi_ev[ufd] = oip
     ipmi_devs[devnum] = ufd
@@ -146,9 +158,9 @@ function ipmi_del(devnum)
 end
 
 function resty_event(ufd, events)
-    local d = ufd:read(4096)
-    if d == '' then
-        print('RECONNECT', events)
+    local d, errno, errmsg = ufd:read(4096)
+    if d == '' or d == nil then
+        -- print('RECONNECT', events)
         db_resty:close()
         db_resty = nixio.socket('unix', 'stream')
         db_resty:connect('/run/openresty/socket')
