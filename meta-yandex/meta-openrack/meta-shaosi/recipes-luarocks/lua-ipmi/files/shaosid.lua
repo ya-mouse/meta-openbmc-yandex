@@ -95,10 +95,10 @@ local db_que = {}
 
 local ipmi_cmds
 local ipmi_sdrs = {
-  ['CPU[0-9]_TEMP'] = 0.0,
-  ['NVME_[0-9]_TEMP'] = 30,
-  ['SATA[0-9]_TEMP'] = 30,
-  ['SIO_TEMP_[0-9]'] = 30,
+  {'CPU[0-9]_TEMP', 0.0},
+  {'NVME_([0-9])_TEMP', 30},
+  {'SATA[0-9]_TEMP', 30},
+  {'SIO_TEMP_[0-9]', 30},
 }
 
 ipmi_cmds = {
