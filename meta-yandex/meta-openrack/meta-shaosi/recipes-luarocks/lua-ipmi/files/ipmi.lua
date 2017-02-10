@@ -614,11 +614,18 @@ function _L._got_sdr_record(self, record)
     local size = band(byte(record, 52), 0x1f)
     local name = sub(record, 53, 52+size):upper()
 
-    local m, duration, found
-    if next(self._sdrs) ~= nil then
-        for m, duration in pairs(self._sdrs) do
+    local duration, found
+    if #self._sdrs > 0 then
+        local i, p
+        for i, p in ipairs(self._sdrs) do
+            local m = p[1] -- match pattern
             found = match(name, '^'..m..'$') ~= nil
-            if found then break end
+            if found then
+                local s = p[3] -- optional replace pattern
+                if s ~= nil then name = string.gsub(name, m, s) end
+                duration = p[2]
+                break
+            end
         end
     else
         duration = 0.0
