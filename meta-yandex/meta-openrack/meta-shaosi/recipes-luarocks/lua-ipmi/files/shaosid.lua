@@ -76,11 +76,11 @@ local ipmi_devs = {}
 local db_resty = nixio.socket('unix', 'stream')
 if not db_resty:connect('/run/openresty/socket') then exit(-1) end
 getmetatable(db_resty).getfd = function(self) return tonumber(tostring(self):sub(13)) end
-getmetatable(db_resty).request = function(self, devnum, name, value)
+getmetatable(db_resty).request = function(self, devnum, name, value, method)
     -- TODO: keep values in array and post it independetly in coroutine
     local body = cjson_encode({ data = value })
     if name ~= '' then name = '/'..name end
-    local body = 'POST /api/storage/'..board_number..'/'..tostring(devnum)..name.." HTTP/1.1\r\nUser-Agent: collector/1.0\r\nAccept: */*\r\nHost: localhost\r\nContent-type: application/json\r\nConnection: keep-alive\r\nContent-Length: "..#body.."\r\n\r\n"..body.."\r\n\r\n"
+    body = (method or 'POST')..' /api/storage/'..board_number..'/'..tostring(devnum)..name.." HTTP/1.1\r\nUser-Agent: collector/1.0\r\nAccept: */*\r\nHost: localhost\r\nContent-type: application/json\r\nConnection: keep-alive\r\nContent-Length: "..#body.."\r\n\r\n"..body.."\r\n\r\n"
     local cnt, errno, errmsg = db_resty:write(body)
     if errno ~= nil then
         -- print('RECONNECT', errno, errmsg)
@@ -138,6 +138,8 @@ end
 --    ipmi_ev[sock:getfd()] = ipmi.lan:new(sock, 'ADMIN', 'ADMIN', ipmi_cmds)
 
 function ipmi_add(devnum)
+    if ipmi_devs[devnum] ~= nil then return end
+
     local oip = ipmi.open:new(devnum, ipmi_cmds, ipmi_sdrs)
     local ufd = oip.f:getfd()
     ipmi_ev[ufd] = oip
@@ -147,11 +149,19 @@ function ipmi_add(devnum)
     local u = uloop.fd_add(oip.f, ipmi_uloop_cb, uloop.ULOOP_READ)
     oip._u = u
     oip:send()
+    db_resty:request(devnum, 'presence', 1)
 end
 
 function ipmi_del(devnum)
     local ufd = ipmi_devs[devnum]
+    if ufd == nil then return end
     local oip = ipmi_ev[ufd]
+    local sdr
+    db_resty:request(devnum, 'presence', nil, 'DELETE')
+    db_resty:request(devnum, '', nil, 'DELETE')
+    for _, sdr in pairs(oip.sdr_names) do
+        db_resty:request(devnum, sdr, nil, 'DELETE')
+    end
     oip:close()
     ipmi_ev[ufd] = nil
     ipmi_devs[devnum] = nil 
@@ -231,8 +241,8 @@ sdr_timer = uloop.timer(function()
             if not action_add then
                 if i ~= -1 then
                     args = { '-r', i }
-                    ipmi_del(k-1)
                 end
+                ipmi_del(k-1)
             elseif i == -1 then
                 -- Run when no same overlay loaded
                 args = { overlay }
