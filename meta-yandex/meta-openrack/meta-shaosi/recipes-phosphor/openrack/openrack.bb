@@ -40,16 +40,18 @@ fi
 
 if type systemctl >/dev/null 2>/dev/null; then
 	systemctl $OPTS enable obmc-overlay.service
+	systemctl $OPTS enable obmc-shaosid.service
 
 	if [ -z "$D" -a "enable" = "enable" ]; then
 		systemctl restart obmc-overlay.service
+		systemctl restart obmc-shaosid.service
 	fi
 fi
 }
 
 FILES_${PN} += "${sysconfdir}/overlays \
                 ${sysconfdir}/default \
-                ${systemd_unitdir}/system/obmc-overlay.service \
+                ${systemd_unitdir}/system/*.service \
                 ${datadir}/openrack \
                 ${sbindir} \
                 ${datadir}/lua/5.1 \
