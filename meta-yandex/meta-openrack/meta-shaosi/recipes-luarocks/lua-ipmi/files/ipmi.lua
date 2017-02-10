@@ -829,7 +829,7 @@ function _O.new(self, devnum, cmds, sdrs)
 end
 
 function _O.close(self)
-    self.f.close()
+    self.f:close()
 end
 
 function _O.prettyinfo(self, fp)
