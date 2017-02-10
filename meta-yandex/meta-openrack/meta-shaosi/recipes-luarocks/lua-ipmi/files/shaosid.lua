@@ -137,6 +137,15 @@ end
 
 --    ipmi_ev[sock:getfd()] = ipmi.lan:new(sock, 'ADMIN', 'ADMIN', ipmi_cmds)
 
+function update_nodes_list()
+    local k, nodes
+    nodes = {}
+    for k, _ in pairs(ipmi_devs) do
+        table.insert(nodes, k)
+    end
+    db_resty:request('nodes', '', cjson_encode(nodes))
+end
+
 function ipmi_add(devnum)
     if ipmi_devs[devnum] ~= nil then return end
 
@@ -150,6 +159,8 @@ function ipmi_add(devnum)
     oip._u = u
     oip:send()
     db_resty:request(devnum, 'presence', 1)
+
+    update_nodes_list()
 end
 
 function ipmi_del(devnum)
@@ -165,6 +176,8 @@ function ipmi_del(devnum)
     oip:close()
     ipmi_ev[ufd] = nil
     ipmi_devs[devnum] = nil 
+
+    update_nodes_list()
 end
 
 function resty_event(ufd, events)
@@ -181,6 +194,8 @@ function resty_event(ufd, events)
 end
 
 local r = uloop.fd_add(db_resty, resty_event, uloop.ULOOP_READ + 0x40)
+
+update_nodes_list()
 
 local sdr_timer
 local dtoverlay_support = true
