@@ -54,6 +54,15 @@
      if not services then
          return HTTP_NOT_FOUND
      end
+@@ -194,7 +201,7 @@ function _M.load(self, uri)
+     local path = sub(uri, config.base_length, slash)
+     local arg = get_uri_args()
+     local method = lower(arg.method or var.request_method)
+-    if (method == 'head' or method == 'options') and services[path..'/get'] then
++    if (method == 'head' or method == 'options') and services['get:'..path] then
+         return HTTP_OK
+     end
+ 
 @@ -199,22 +206,17 @@ function _M.load(self, uri)
      end
  
