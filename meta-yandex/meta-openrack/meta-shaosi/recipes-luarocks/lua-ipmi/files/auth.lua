@@ -86,6 +86,9 @@ function _M.logout(self)
 end
 
 function _M.check_sid()
+    -- Allow all from unix socket
+    if ngx.var.server_addr == 'unix:/run/openresty/socket' then return true end
+
     local cookie, err = ck:new()
     local sid, err = cookie:get('sid')
     if err then return false end
