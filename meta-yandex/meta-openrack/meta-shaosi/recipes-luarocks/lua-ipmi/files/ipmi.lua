@@ -8,7 +8,7 @@ local hash = nixio.crypto.hash
 local stpack, stunpack = bin.pack, bin.unpack
 local bor, band, bxor, lshift, rshift = bit.bor, bit.band, bit.bxor, bit.lshift, bit.rshift
 local byte, sub, match = string.byte, string.sub, string.match
-local pow = math.pow
+local pow, max = math.pow, math.max
 
 local IOC = {
   SIZEBITS = 14,
@@ -124,11 +124,27 @@ ffi.cdef[[
       uint8_t slave_addr;
       uint8_t lun;
    };
+
+   typedef long time_t;
+
+   typedef struct timeval {
+      time_t tv_sec;
+      time_t tv_usec;
+   } timeval;
+
+   int gettimeofday(struct timeval* t, void* tzp);
 ]]
 
 local C = ffi.C
 
 local _ioctl = function(fd, ...) return C.ioctl(fd:getfd(), ...) end
+
+local gettimeofday_struct = ffi.new("timeval")
+
+local function gettimeofday()
+   C.gettimeofday(gettimeofday_struct, nil)
+   return tonumber(gettimeofday_struct.tv_sec), tonumber(gettimeofday_struct.tv_usec)
+end
 
 function _checksum(data)
     local i
@@ -166,6 +182,21 @@ local _L = {
 
 local L_mt = { __index = _L }
 
+L_mt.__ipairs = function(self)
+    local idx = self._cmdidx
+    local interval = self._interval
+    local max_interval = self._max_interval
+    return function()
+        i = i + 1
+        if i <= max_interval and (i % idx) == 0 then
+            local c = self._cmds[i]
+            local cidx = c._idx
+            c._idx = (c._idx + 1) % #c
+            return i, c[cidx]
+        end
+    end
+end
+
 function _L.new(self, sock, user, passwd, cmds, sdrs, authtype)
     local t = {
         _sock = sock,
@@ -179,10 +210,19 @@ function _L.new(self, sock, user, passwd, cmds, sdrs, authtype)
         _sdr_cmds = {},
         _sdr_cached = false,
         _reqauth = authtype or 2,
+        _interval = 1,
+        _max_interval = 0,
     }
 
     t._sdr_read_cb = t._cmds['sdr_read']
     t._ready_cb = t._cmds['ready']
+    local i, c
+    for i, c in pairs(t._cmds) do
+        if type(i) == 'number' then
+            t._max_interval = max(i, t._max_interval)
+            c._idx = 0
+        end
+    end
     local obj = setmetatable(t, L_mt)
     obj:_initsession()
     return obj
@@ -614,21 +654,23 @@ function _L._got_sdr_record(self, record)
     local size = band(byte(record, 52), 0x1f)
     local name = sub(record, 53, 52+size):upper()
 
-    local duration, found
+    local interval, ttl, found
     if #self._sdrs > 0 then
         local i, p
         for i, p in ipairs(self._sdrs) do
             local m = p[1] -- match pattern
             found = match(name, '^'..m..'$') ~= nil
             if found then
-                local s = p[3] -- optional replace pattern
+                local s = p[4] -- optional replace pattern
                 if s ~= nil then name = string.gsub(name, m, s) end
-                duration = p[2]
+                interval = p[2]
+                ttl = p[3]
                 break
             end
         end
     else
-        duration = 0.0
+        interval = 1
+        ttl = 0.0
         found = true
     end
 
@@ -649,7 +691,14 @@ function _L._got_sdr_record(self, record)
     local mtol = stunpack('>H', sub(record, 29, 30))
     local bacc = stunpack('>I', sub(record, 31, 34))
 
-    table.insert(self._cmds, {
+    -- reserve a space for interval commands
+    if self._cmds[interval] == nil then
+        self._cmds[interval] = { _idx = 0 }
+        table.insert(self._intervals, interval)
+        table.sort(self._intervals)
+    end
+
+    table.insert(self._cmds[interval], {
         -- callback
         _L._cmd_got_sensor_reading,
         -- netfn, cmd
@@ -673,7 +722,8 @@ function _L._got_sdr_record(self, record)
         -- __TO_B_EXP
         tos32(band(bacc, 0xf), 4)
     })
-    self.sdr_ttl[name] = duration
+    -- print(self.n, name, interval, ttl, #self._cmds[interval])
+    self.sdr_ttl[name] = ttl
     table.insert(self.sdr_names, name)
 
     _L._next_sdr_or_ready(self)
@@ -711,11 +761,12 @@ function _L._cmd_got_sensor_reading(self, resp)
 --        if self._sdr_read_cb ~= nil then
 --            self:_sdr_read_cb(self._cmds[self._cmdidx+1][5], 'na')
 --        end
---        print('_L._cmd_got_sensor_reading fail')
+        -- print(self.n, '_L._cmd_got_sensor_reading fail')
         return true
     end
 
-    local name, t,l,m,b,k2,k1 = unpack(self._cmds[self._cmdidx + 1], 5)
+    local c = self._cmds[self._intervals[self._interval]]
+    local name, t,l,m,b,k2,k1 = unpack(c[c._idx + 1], 5)
     local val = byte(resp, 8)
     if t == 1 then
         if band(val, 0x80) == 0x80 then val = val + 1 end
@@ -743,7 +794,8 @@ function _L._process_next_cmd(self)
         return 0
     end
     self._recv = _L._got_next_cmd
-    local cmd = self._cmds[self._cmdidx + 1]
+    local c = self._cmds[self._intervals[self._interval]]
+    local cmd = c[c._idx + 1]
     if type(cmd[4]) == 'table' then
         return self:_send_payload(cmd[2], cmd[3], unpack(cmd[4] or {}))
     elseif cmd[4] then
@@ -754,14 +806,37 @@ function _L._process_next_cmd(self)
 end
 
 function _L._got_next_cmd(self, response)
-    self._cmds[self._cmdidx + 1][1](self, response)
-    self._cmdidx = (self._cmdidx + 1) % #self._cmds
-    if self._cmdidx == 0 then self._stopped = 0 end
+    local c = self._cmds[self._intervals[self._interval]]
+    c[c._idx + 1][1](self, response)
+    c._idx = (c._idx + 1) % #c
+    if c._idx == 0 then
+        -- print(self.n, self._interval, self._intervals[self._interval], #self._intervals)
+        local i, v, oi
+        oi = self._interval
+        for i, v in ipairs(self._intervals) do
+            if v >= self._interval and self._round % v == 0 then
+                self._interval = i
+                break
+            end
+        end
+        if oi == self._interval then self._interval = 0 end
+    end
+    if self._interval == 0 then
+        self._round = self._round + 1
+        self._interval = 1
+        print(self.n, 'ROUND', self._round, self._stopped, self._logged)
+        self._stopped = true
+    end
+    -- TODO: check for max_rounds
+    if self._round > 0 and self._round % self._max_interval == 0 then self._stopped = true end
 end
 
 function _L.process_commands(self)
     if not self._logged or not self._stopped then return 0 end
 
+    local tm = self._tm or 0
+    self._tm = gettimeofday()
+    self._tm_delta = self._tm - tm
     self._stopped = false
     self._send = self._process_next_cmd
     return self:send()
@@ -783,6 +858,8 @@ local _O = {
 
 local O_mt = { __index = _O }
 
+O_mt.__ipairs = L_mt.__ipairs
+
 function _O.new(self, devnum, cmds, sdrs)
     local t = {
         n = devnum,
@@ -802,11 +879,24 @@ function _O.new(self, devnum, cmds, sdrs)
         _logged = false,
         _send = _L._get_product_id,
         _recv = false,
+        _interval = 1,
+        _intervals = {},
+        _max_interval = 0,
+        _round = 0,
     }
     if not t.f then return end
 
     t._sdr_read_cb = t._cmds['sdr_read']
     t._ready_cb = t._cmds['ready']
+    local i, c
+    for i, c in pairs(t._cmds) do
+        if type(i) == 'number' then
+            table.insert(t._intervals, i)
+            t._max_interval = max(i, t._max_interval)
+            c._idx = 0
+        end
+    end
+    table.sort(t._intervals)
     getmetatable(t.f).getfd = function(self) return tonumber(tostring(self):sub(12)) end
 
     local i = ffi.new('int[1]', 0)
@@ -855,7 +945,7 @@ function _O._send_payload(self, netfn, command, ...)
     self.req.msg.netfn = netfn
     self.req.msg.cmd = command
 
-    if self._DEBUG then print('>>>>>', netfn, command, nixio.bin.hexlify(reqbody), self:prettyinfo(self._send), self:prettyinfo(self._recv), self._cmdidx) end
+    if self._DEBUG then print('>>>>>', netfn, command, nixio.bin.hexlify(reqbody), self:prettyinfo(self._send), self:prettyinfo(self._recv), self._interval) end
     local ret = _ioctl(self.f, IPMICTL_SEND_COMMAND, self.req)
     return ret
 end
@@ -874,11 +964,13 @@ function _O.recv(self)
     local fn = self._recv
     self._recv = false
 
-    if self._DEBUG then print('<<<<<', nixio.bin.hexlify(payload), self:prettyinfo(self._send), self:prettyinfo(self._recv), self._cmdidx) end
+    if self._DEBUG then print('<<<<<', nixio.bin.hexlify(payload), self:prettyinfo(self._send), self:prettyinfo(self._recv), self._interval) end
     return fn(self, string.rep('\x00', 6)..payload)
 end
 
-function _O._process_next_cmd(self)
+_O._process_next_cmd = _L._process_next_cmd
+
+function aaa(self)
     if #self._cmds == 0 then
         self._stopped = true
         return 0

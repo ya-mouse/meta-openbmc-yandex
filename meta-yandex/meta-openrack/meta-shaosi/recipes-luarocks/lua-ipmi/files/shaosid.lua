@@ -98,23 +98,30 @@ local db_que = {}
 
 local ipmi_cmds
 local ipmi_sdrs = {
-  {'CPU[0-9]_TEMP', 0.0},
-  {'NVME_([0-9])_TEMP', 30},
-  {'SATA[0-9]_TEMP', 30},
-  {'SIO_TEMP_[0-9]', 30},
+  -- pattern | round | ttl | *replace pattern
+  {'CPU[0-9]_TEMP', 2, 0.0},
+  {'NVME_([0-9])_TEMP', 2, 0},
+  {'SATA[0-9]_TEMP', 2, 0},
+  {'SIO_TEMP_[0-9]', 2, 0},
+  {'.+', 1, 0.0},
 }
 
+local rounds = 0
 ipmi_cmds = {
-    { function(self, response)
+    [0] = {
+        { function(self, response)
         -- print('SESS INFO:'..tostring(self.n), response:byte(7), self._ver, self._mfg, self._prod, self._builtin_sdr)
-    end, 0x6, 0x3d },
+        end, 0x6, 0x3d },
+    },
 
-    { function(self, response)
-        if #response == 7 then return false end
-        db_resty:request(self.n, 'type', response:byte(8+3))
-        db_resty:request(self.n, 'rackid', response:sub(8+5, 8+14))
-        db_resty:request(self.n, 'slotid', response:byte(8+15))
-    end, 0x38, 0x30, 0 },
+    [10] = {
+        { function(self, response)
+            if #response == 7 then return false end
+            db_resty:request(self.n, 'type', response:byte(8+3))
+            db_resty:request(self.n, 'rackid', response:sub(8+5, 8+14))
+            db_resty:request(self.n, 'slotid', response:byte(8+15))
+        end, 0x38, 0x30, 0 },
+    },
 
     sdr_read = function(self, name, value)
         db_que[name] = value
@@ -207,6 +214,7 @@ sdr_timer = uloop.timer(function()
 
     local k, v, t, i
 
+    rounds = rounds + 1
     --
     -- TODO: do this in separate timer event
     --
