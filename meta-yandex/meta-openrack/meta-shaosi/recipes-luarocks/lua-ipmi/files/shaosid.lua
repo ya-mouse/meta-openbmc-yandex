@@ -116,6 +116,7 @@ ipmi_cmds = {
 
     [10] = {
         { function(self, response)
+            print(self.n, 'tm', self._tm, 'delta', self._tm_delta, 'round', self._round, '10 INTERVAL', 'rounds', rounds)
             if #response == 7 then return false end
             db_resty:request(self.n, 'type', response:byte(8+3))
             db_resty:request(self.n, 'rackid', response:sub(8+5, 8+14))
@@ -125,12 +126,12 @@ ipmi_cmds = {
 
     sdr_read = function(self, name, value)
         db_que[name] = value
-        if self._DEBUG then print('GOT READ: ', self.n, name, value) end
+        if not self._DEBUG then print('GOT READ: ', self.n, name, value) end
         db_resty:request(self.n, name, { value = value, duration = self.sdr_ttl[name] })
     end,
 
     ready = function(self)
-        if self._DEBUG then print('READY '..tostring(self.n), cjson_encode(self.sdr_names)) end
+        if not self._DEBUG then print('READY '..tostring(self.n), cjson_encode(self.sdr_names)) end
         db_resty:request(self.n, '', cjson_encode(self.sdr_names))
     end
 }
@@ -167,6 +168,7 @@ function ipmi_add(devnum)
 
     local u = uloop.fd_add(oip.f, ipmi_uloop_cb, uloop.ULOOP_READ)
     oip._u = u
+    oip._stopped = false
     oip:send()
     db_resty:request(devnum, 'presence', 1)
 
