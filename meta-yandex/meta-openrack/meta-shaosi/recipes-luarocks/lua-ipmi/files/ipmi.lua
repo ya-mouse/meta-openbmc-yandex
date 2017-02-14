@@ -203,7 +203,7 @@ function _L.new(self, sock, user, passwd, cmds, sdrs, authtype)
         _user = user,
         _passwd = passwd,
         _kg = passwd,
-        _cmds = cmds or {},
+        _cmds = {},
         _sdrs = sdrs or {},
         sdr_ttl = {},
         sdr_names = {},
@@ -212,17 +212,29 @@ function _L.new(self, sock, user, passwd, cmds, sdrs, authtype)
         _reqauth = authtype or 2,
         _interval = 1,
         _max_interval = 0,
+        _round = 0,
+        _retry = 0,
     }
 
-    t._sdr_read_cb = t._cmds['sdr_read']
-    t._ready_cb = t._cmds['ready']
     local i, c
-    for i, c in pairs(t._cmds) do
+    for i, c in pairs(cmds or {}) do
         if type(i) == 'number' then
+        t._cmds[i] = {}
+        local tc = t._cmds[i]
+        local ci, cv
+        for ci, cv in ipairs(c) do
+            tc[ci] = cv
+        end
+            table.insert(t._intervals, i)
             t._max_interval = max(i, t._max_interval)
-            c._idx = 0
+            tc._idx = 0
+        else
+            t._cmds[i] = c
         end
     end
+    t._sdr_read_cb = t._cmds['sdr_read']
+    t._ready_cb = t._cmds['ready']
+    table.sort(t._intervals)
     local obj = setmetatable(t, L_mt)
     obj:_initsession()
     return obj
@@ -357,7 +369,7 @@ function _L._pack_payload(self, payload, payload_type)
 end
 
 function _L.send(self)
-    if self._send then
+    if self._send and not self._stopped then
         return self:_send()
     else
         return 0
@@ -681,8 +693,8 @@ function _L._got_sdr_record(self, record)
     end
 
     local tos32 = function(val, bits)
-        if band(val, lshift(bits-1, 1)) ~= 0 then
-            return bor(-band(val, lshift(bits-1, 1)), val)
+        if band(val, lshift(1, bits-1)) ~= 0 then
+            return bor(-band(val, lshift(1, bits-1)), val)
         else
             return val
         end
@@ -722,7 +734,6 @@ function _L._got_sdr_record(self, record)
         -- __TO_B_EXP
         tos32(band(bacc, 0xf), 4)
     })
-    -- print(self.n, name, interval, ttl, #self._cmds[interval])
     self.sdr_ttl[name] = ttl
     table.insert(self.sdr_names, name)
 
@@ -744,8 +755,9 @@ function _L._next_sdr_or_ready(self)
         self._sdr_cached = true
         self._logged = true
         self._send = false
+        self._stopped = true
         if self._ready_cb then self:_ready_cb() end
-        if self._DEBUG then print('READY!') end
+        if self._DEBUG then print(self.n, 'READY!') end
     else
         self._send = _L._get_sdr_header
     end
@@ -753,8 +765,21 @@ end
 
 function _L._cmd_got_sensor_reading(self, resp)
     if #resp < 9 then
-        -- Retry on timeout
-        return #resp ~= 7 or byte(resp, 7) ~= 0xc3
+        if #resp ~= 7 then return true end
+
+	-- Retry on timeout
+        local rc = byte(resp, 7)
+        if rc == 0xc3 or rc == 0xff then
+            if self._retry < 4 then
+               self._retry = self._retry + 1
+            else
+               print(self.n, rc, 'timeouted')
+               self._stopped = true
+               self._retry = 0
+            end
+            return false
+        end
+        return true
     end
 
     if not (byte(resp, 7) == 0 and band(byte(resp, 9), 0x20) ~= 0x20 and band(byte(resp, 9), 0x40) == 0x40) then
@@ -766,7 +791,7 @@ function _L._cmd_got_sensor_reading(self, resp)
     end
 
     local c = self._cmds[self._intervals[self._interval]]
-    local name, t,l,m,b,k2,k1 = unpack(c[c._idx + 1], 5)
+    local name,t,l,m,b,k2,k1 = unpack(c[c._idx + 1], 5)
     local val = byte(resp, 8)
     if t == 1 then
         if band(val, 0x80) == 0x80 then val = val + 1 end
@@ -777,6 +802,7 @@ function _L._cmd_got_sensor_reading(self, resp)
     end
     if t > 2 then
         -- Ooops! This isn't an analog sensor
+        print(self.n, name, t)
         return true
     end
 
@@ -807,7 +833,10 @@ end
 
 function _L._got_next_cmd(self, response)
     local c = self._cmds[self._intervals[self._interval]]
-    c[c._idx + 1][1](self, response)
+    if c[c._idx + 1][1](self, response) == false then
+        if self._DEBUG then print(self.n, 'FAIL', self:prettyinfo(self._recv), self:prettyinfo(self._send)) end
+        return false
+    end
     c._idx = (c._idx + 1) % #c
     if c._idx == 0 then
         -- print(self.n, self._interval, self._intervals[self._interval], #self._intervals)
@@ -824,11 +853,13 @@ function _L._got_next_cmd(self, response)
     if self._interval == 0 then
         self._round = self._round + 1
         self._interval = 1
-        print(self.n, 'ROUND', self._round, self._stopped, self._logged)
+        -- print(self.n, 'ROUND', self._round, self._stopped, self._logged)
         self._stopped = true
     end
     -- TODO: check for max_rounds
     if self._round > 0 and self._round % self._max_interval == 0 then self._stopped = true end
+
+    return true
 end
 
 function _L.process_commands(self)
@@ -870,7 +901,7 @@ function _O.new(self, devnum, cmds, sdrs)
         ipmb_addr = ffi.new('struct ipmi_ipmb_addr[1]'),
         sdr_ttl = { },
         sdr_names = { },
-        _cmds = cmds or { },
+        _cmds = { },
         _sdrs = sdrs or { },
         _cmdidx = 0,
         _sdr_cmds = { },
@@ -883,19 +914,30 @@ function _O.new(self, devnum, cmds, sdrs)
         _intervals = {},
         _max_interval = 0,
         _round = 0,
+        _retry = 0,
     }
     if not t.f then return end
 
-    t._sdr_read_cb = t._cmds['sdr_read']
-    t._ready_cb = t._cmds['ready']
     local i, c
-    for i, c in pairs(t._cmds) do
+    for i, c in pairs(cmds or {}) do
         if type(i) == 'number' then
+            t._cmds[i] = {}
+            local tc = t._cmds[i]
+            local ci, cv
+            for ci, cv in ipairs(c) do
+                tc[ci] = cv
+           end
             table.insert(t._intervals, i)
             t._max_interval = max(i, t._max_interval)
-            c._idx = 0
+            tc._idx = 0
+        else
+            t._cmds[i] = c
         end
     end
+
+    t._sdr_read_cb = t._cmds['sdr_read']
+    t._ready_cb = t._cmds['ready']
+
     table.sort(t._intervals)
     getmetatable(t.f).getfd = function(self) return tonumber(tostring(self):sub(12)) end
 
@@ -945,7 +987,7 @@ function _O._send_payload(self, netfn, command, ...)
     self.req.msg.netfn = netfn
     self.req.msg.cmd = command
 
-    if self._DEBUG then print('>>>>>', netfn, command, nixio.bin.hexlify(reqbody), self:prettyinfo(self._send), self:prettyinfo(self._recv), self._interval) end
+    if self._DEBUG then print(self.n, '>>>>>', netfn, command, nixio.bin.hexlify(reqbody), self:prettyinfo(self._send), self:prettyinfo(self._recv), self._interval) end
     local ret = _ioctl(self.f, IPMICTL_SEND_COMMAND, self.req)
     return ret
 end
@@ -964,7 +1006,7 @@ function _O.recv(self)
     local fn = self._recv
     self._recv = false
 
-    if self._DEBUG then print('<<<<<', nixio.bin.hexlify(payload), self:prettyinfo(self._send), self:prettyinfo(self._recv), self._interval) end
+    if self._DEBUG then print(self.n, '<<<<<', nixio.bin.hexlify(payload), self:prettyinfo(self._send), self:prettyinfo(fn), self._interval) end
     return fn(self, string.rep('\x00', 6)..payload)
 end
 
