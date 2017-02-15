@@ -767,7 +767,7 @@ function _L._cmd_got_sensor_reading(self, resp)
     if #resp < 9 then
         if #resp ~= 7 then return true end
 
-	-- Retry on timeout
+        -- Retry on timeout
         local rc = byte(resp, 7)
         if rc == 0xc3 or rc == 0xff then
             if self._retry < 4 then

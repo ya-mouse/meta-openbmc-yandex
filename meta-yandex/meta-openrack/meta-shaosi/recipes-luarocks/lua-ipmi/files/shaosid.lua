@@ -104,6 +104,8 @@ local ipmi_sdrs = {
   {'SATA[0-9]_TEMP', 2, 60.0},
   {'SIO_TEMP_[0-9]', 2, 60.0},
   {'.+_TEMP', 2, 60.0},
+  {'SYS_PWR', 2, 60.0},
+  {'P12V', 2, 60.0},
 }
 
 local rounds = 0
@@ -114,7 +116,7 @@ ipmi_cmds = {
         end, 0x6, 0x3d },
     },
 
-    [3] = {
+    [5] = {
         { function(self, response)
             print(self.n, 'tm', self._tm, 'delta', self._tm_delta, 'round', self._round, '10 INTERVAL', 'rounds', rounds)
             if #response == 7 then return true end
@@ -144,7 +146,8 @@ ipmi_cmds = {
 
     sdr_read = function(self, name, value)
         db_que[name] = value
-        if not self._DEBUG then print('GOT READ: ', self.n, name, value, 'round', self._round) end
+        if not self._DEBUG then print('GOT READ: ', self.n, name, value, 'round', self._round, 'retry', self._retry) end
+        self._retry = 0
         db_resty:request(self.n, name, { value = value, duration = self.sdr_ttl[name] })
     end,
 
