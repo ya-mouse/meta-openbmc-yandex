@@ -620,6 +620,7 @@ function _L._got_sdr_reserve(self, response)
     self._sdr[4] = stunpack('<H', sub(response, 8, 9))
     self._sdr_recid = 0
     self._sdr_idx = 0
+    self._sdr_type = 0
     self._send = _L._get_sdr_header
 
     return true
@@ -639,7 +640,8 @@ function _L._got_sdr_header(self, header)
     end
 
     self._sdr_nextid = stunpack('<H', sub(header, 8, 9))
-    if byte(header, 13) ~= 0x01 then -- SDR_RECORD_TYPE_FULL_SENSOR
+    self._sdr_type = byte(header, 13)
+    if self._sdr_type ~= 0x01 and self._sdr_type ~= 0x02 then -- SDR_RECORD_TYPE_FULL_SENSOR || SDR_RECORD_TYPE_COMPACT_SENSOR
         _L._next_sdr_or_ready(self)
         return true
     end
@@ -657,14 +659,45 @@ function _L._get_sdr_record(self)
 end
 
 function _L._got_sdr_record(self, record)
-    local b18 = byte(record, 18)
-    if #record < 55 or (b18 ~= 0x01 and b18 ~= 0x04 and b18 ~= 0x08) then
+    local sdr_type = byte(record, 17)
+
+    if #record < 30 then -- FIXME: check for minimal length of COMPACT_SENSOR record
+        if #record ~= 7 then
+            _L._next_sdr_or_ready(self)
+            if not self._DEBUG then print('_L._next_sdr_or_ready', sdr_type, byte(record, 8+8), nixio.bin.hexlify(record)) end
+            return true
+        end
+
+        -- Retry on timeout
+        local rc = byte(record, 7)
+        if rc == 0xc3 or rc == 0xff then
+            if self._retry < 4 then
+               self._retry = self._retry + 1
+            else
+               print(self.n, rc, 'timeouted')
+               self._stopped = true
+               self._retry = 0
+            end
+            return false
+        end
+
         _L._next_sdr_or_ready(self)
-        if self._DEBUG then print('_L._next_sdr_or_ready') end
         return true
     end
-    local size = band(byte(record, 52), 0x1f)
-    local name = sub(record, 53, 52+size):upper()
+
+    local name
+
+    if self._sdr_type == 2 then
+         name = sub(record, 37)
+    else
+         local size = band(byte(record, 52), 0x1f)
+         name = sub(record, 53, 52+size):upper()
+    end
+
+    if sdr_type ~= 0x01 and sdr_type ~= 0x04 and sdr_type ~= 0x08 and sdr_type ~= 0x0d then
+        _L._next_sdr_or_ready(self)
+        return true
+    end
 
     local interval, ttl, found
     if #self._sdrs > 0 then
@@ -692,6 +725,34 @@ function _L._got_sdr_record(self, record)
         return true
     end
 
+    -- reserve a space for interval commands
+    if self._cmds[interval] == nil then
+        self._cmds[interval] = { _idx = 0 }
+        table.insert(self._intervals, interval)
+        table.sort(self._intervals)
+    end
+
+    if self._sdr_type == 2 then
+        table.insert(self._cmds[interval], {
+            -- callback
+            _L._cmd_got_sensor_reading,
+            -- netfn, cmd
+            0x4, 0x2d,
+            -- number
+            byte(record, 12),
+            -- name
+            name,
+            -- unit
+            3, -- not an analog sensor
+        })
+
+        self.sdr_ttl[name] = ttl
+        table.insert(self.sdr_names, name)
+
+        _L._next_sdr_or_ready(self)
+        return true
+    end
+
     local tos32 = function(val, bits)
         if band(val, lshift(1, bits-1)) ~= 0 then
             return bor(-band(val, lshift(1, bits-1)), val)
@@ -702,13 +763,6 @@ function _L._got_sdr_record(self, record)
 
     local mtol = stunpack('>H', sub(record, 29, 30))
     local bacc = stunpack('>I', sub(record, 31, 34))
-
-    -- reserve a space for interval commands
-    if self._cmds[interval] == nil then
-        self._cmds[interval] = { _idx = 0 }
-        table.insert(self._intervals, interval)
-        table.sort(self._intervals)
-    end
 
     table.insert(self._cmds[interval], {
         -- callback
@@ -767,7 +821,7 @@ function _L._cmd_got_sensor_reading(self, resp)
     if #resp < 9 then
         if #resp ~= 7 then return true end
 
-        -- Retry on timeout
+	-- Retry on timeout
         local rc = byte(resp, 7)
         if rc == 0xc3 or rc == 0xff then
             if self._retry < 4 then
@@ -800,13 +854,15 @@ function _L._cmd_got_sensor_reading(self, resp)
         -- make int8_t from uint8_t
         val = stunpack('b', stpack('B', val))
     end
+
+    local result
     if t > 2 then
         -- Ooops! This isn't an analog sensor
-        print(self.n, name, t)
-        return true
+        result = val
+    else
+        result = ((m * val) + (b * pow(10, k1))) * pow(10, k2)
     end
 
-    local result = ((m * val) + (b * pow(10, k1))) * pow(10, k2)
     if self._sdr_read_cb ~= nil then
         self:_sdr_read_cb(name, result)
     end
