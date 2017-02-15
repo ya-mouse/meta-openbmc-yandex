@@ -101,11 +101,14 @@ local ipmi_sdrs = {
   -- pattern | round | ttl | *replace pattern
   {'CPU[0-9]_TEMP', 2, 60.0},
   {'NVME_([0-9])_TEMP', 2, 60.0},
-  {'SATA[0-9]_TEMP', 2, 60.0},
+  {'SATA[0-9]+_TEMP', 2, 60.0},
   {'SIO_TEMP_[0-9]', 2, 60.0},
   {'.+_TEMP', 2, 60.0},
   {'SYS_PWR', 2, 60.0},
   {'P12V', 2, 60.0},
+  {'SATA[0-9]+_STAT', 2, 60.0},
+  {'P0N[01]_STAT', 2, 60.0},
+  {'SATA[0-9]+_P1N[01]_STAT', 2, 60.0},
 }
 
 local rounds = 0
@@ -116,7 +119,7 @@ ipmi_cmds = {
         end, 0x6, 0x3d },
     },
 
-    [5] = {
+    [3] = {
         { function(self, response)
             print(self.n, 'tm', self._tm, 'delta', self._tm_delta, 'round', self._round, '10 INTERVAL', 'rounds', rounds)
             if #response == 7 then return true end
@@ -126,15 +129,20 @@ ipmi_cmds = {
         end, 0x38, 0x30, 0x00 },
         { function(self, response)
             if #response == 7 then return true end
+            local ip = ''
             local getmac = function(o)
                 local s, i
                 s = ''
                 for i=0,5 do
-                    s = s .. string.format('%02x', tonumber(response:byte(o+i) or 0)) .. ':'
+                    s = s .. string.format('%02x:', tonumber(response:byte(o+i) or 0))
                 end
                 return s:sub(1, -2)
             end
             local i
+            for i=0,3 do
+                ip = ip .. string.format('%d.', response:byte(8+i))
+            end
+            db_resty:request(self.n, 'ipv4', ip:sub(1, -2))
             for i=0,3 do
                 local n = string.format('mac/eth%d', i-1)
                 if i == 0 then n = 'mac/ipmi' end
@@ -146,7 +154,7 @@ ipmi_cmds = {
 
     sdr_read = function(self, name, value)
         db_que[name] = value
-        if not self._DEBUG then print('GOT READ: ', self.n, name, value, 'round', self._round, 'retry', self._retry) end
+        if not self._DEBUG then print('GOT READ: ', self.n, name, value, 'round', self._round, 'retries', self._retry) end
         self._retry = 0
         db_resty:request(self.n, name, { value = value, duration = self.sdr_ttl[name] })
     end,
@@ -207,6 +215,7 @@ function ipmi_del(devnum)
         db_resty:request(devnum, sdr, nil, 'DELETE')
     end
     local i
+    db_resty:request(devnum, 'ipv4', nil, 'DELETE')
     db_resty:request(devnum, 'mac/ipmi', nil, 'DELETE')
     for i=0,4 do
         db_resty:request(devnum, format.string('mac/eth%d', i), nil, 'DELETE')
