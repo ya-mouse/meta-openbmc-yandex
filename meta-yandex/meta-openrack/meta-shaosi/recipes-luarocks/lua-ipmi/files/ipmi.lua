@@ -212,6 +212,7 @@ function _L.new(self, sock, user, passwd, cmds, sdrs, authtype)
         _reqauth = authtype or 2,
         _interval = 1,
         _max_interval = 0,
+        _intervals = {},
         _round = 0,
         _retry = 0,
     }
@@ -238,6 +239,10 @@ function _L.new(self, sock, user, passwd, cmds, sdrs, authtype)
     local obj = setmetatable(t, L_mt)
     obj:_initsession()
     return obj
+end
+
+function _L.close(self)
+    self._sock:close()
 end
 
 function _L._initsession(self)
@@ -390,6 +395,8 @@ function _L.recv(self)
         print('Not valid IPMI')
         return false
     end
+
+    if self._DEBUG then print(self.ip, '<<<<<', nixio.bin.hexlify(data), prettyinfo(self, self._send), prettyinfo(self, self._recv), self._interval) end
 
     if not is_asf and (byte(data, 5) == 0x00 or byte(data, 5) == 0x02 or byte(data, 5) == 0x04) then
         -- IPMI v1.5
@@ -555,6 +562,13 @@ function _L._got_priv_level(self, response)
         return true
     end
 
+    self._logged = true
+    if next(self._sdrs) ~= nil then
+        self._send = self._get_product_id
+    else
+        self._send = self._process_next_cmd
+    end
+
     return true
 end
 
@@ -578,11 +592,14 @@ function _L._got_product_id(self, response)
         self._sdr = { 0x0a, 0x23, 0x00, 0x00 }
     end
 
-    if not self._sdr_cached then
+    if not self._sdr_cached and next(self._sdrs) ~= nil then
         self._send = _L._get_sdr_info
     else
         self._logged = true
         self._send = false
+        self._stopped = true
+        if self._ready_cb then self:_ready_cb() end
+        if self._DEBUG then print(self.n, 'READY!') end
     end
 
     return true
@@ -871,7 +888,7 @@ function _L._cmd_got_sensor_reading(self, resp)
 end
 
 function _L._process_next_cmd(self)
-    if #self._cmds == 0 then
+    if next(self._cmds) == nil then
         self._stopped = true
         return 0
     end
@@ -1020,7 +1037,7 @@ function _O.close(self)
     self.f:close()
 end
 
-function _O.prettyinfo(self, fp)
+function prettyinfo(self, fp)
     return self._fpn[fp]
 end
 
@@ -1043,7 +1060,7 @@ function _O._send_payload(self, netfn, command, ...)
     self.req.msg.netfn = netfn
     self.req.msg.cmd = command
 
-    if self._DEBUG then print(self.n, '>>>>>', netfn, command, nixio.bin.hexlify(reqbody), self:prettyinfo(self._send), self:prettyinfo(self._recv), self._interval) end
+    if self._DEBUG then print(self.n, '>>>>>', netfn, command, nixio.bin.hexlify(reqbody), prettyinfo(self, self._send), prettyinfo(self, self._recv), self._interval) end
     local ret = _ioctl(self.f, IPMICTL_SEND_COMMAND, self.req)
     return ret
 end
@@ -1062,14 +1079,14 @@ function _O.recv(self)
     local fn = self._recv
     self._recv = false
 
-    if self._DEBUG then print(self.n, '<<<<<', nixio.bin.hexlify(payload), self:prettyinfo(self._send), self:prettyinfo(fn), self._interval) end
+    if self._DEBUG then print(self.n, '<<<<<', nixio.bin.hexlify(payload), prettyinfo(self, self._send), prettyinfo(self, fn), self._interval) end
     return fn(self, string.rep('\x00', 6)..payload)
 end
 
 _O._process_next_cmd = _L._process_next_cmd
 
 function aaa(self)
-    if #self._cmds == 0 then
+    if next(self._cmds) == nil then
         self._stopped = true
         return 0
     end
