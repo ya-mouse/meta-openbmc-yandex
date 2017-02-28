@@ -11,7 +11,7 @@ local cjson_encode = cjson.encode
 local stunpack = bin.unpack
 local sub = string.sub
 local byte = string.byte
-local band = bit.band
+local band, bxor = bit.band, bit.bxor
 
 local board_number = nixio.open('/etc/openrack-board'):read(16):sub(1, -2)
 if board_number:sub(1, 3) ~= 'CB-' then
@@ -95,6 +95,8 @@ getmetatable(db_resty).request = function(self, devnum, name, value, method)
 end
 local db_que = {}
 
+local L_ipmi_scope = 'eth1'
+
 local O_ipmi_sdrs = {}
 local L_ipmi_sdrs = {
   -- pattern | round | ttl | *replace pattern
@@ -132,13 +134,16 @@ local O_ipmi_cmds = {
             end
             ip = ip:sub(1, -2)
             db_resty:request(self.n, 'ipv4', ip)
-            if self._lan == nil then
-                L_ipmi_add(self.n, ip)
-            end
+            -- if self._lan == nil then
+            --    L_ipmi_add(self.n, ip)
+            -- end
             for i=0,3 do
                 local n = string.format('mac/eth%d', i-1)
-                if i == 0 then n = 'mac/ipmi' end
                 local mac = getmac(8+4 + 6*i)
+                if i == 0 then
+                    L_ipmi_add(self.n, response:byte(8+4 + 6*i, 8+4 + 6*(i+1) - 1))
+                    n = 'mac/ipmi'
+                end
                 if mac ~= '00:00:00:00:00:00' then db_resty:request(self.n, n, mac) end
             end
             return true
@@ -216,12 +221,20 @@ function O_ipmi_add(devnum)
     update_nodes_list()
 end
 
-function L_ipmi_add(devnum, ip)
+function L_ipmi_add(devnum, ...)
     local ufd = ipmi_devs[devnum]
     local oip = ipmi_ev[ufd]
     if oip == nil or oip._lan ~= nil then return end
 
-    local sock, code, err = nixio.connect(ip, 623, 'inet', 'dgram')
+    if select('#', ...) ~= 6 then return end
+
+    local ip = string.format('fe80::%x%x:%xff:fe%x:%x%x%%%s',
+        bxor(select(1, ...), 2), select(2, ...),
+        select(3, ...), select(4, ...),
+        select(5, ...), select(6, ...),
+        L_ipmi_scope)
+
+    local sock, code, err = nixio.connect(ip, 623, 'any', 'dgram')
     if sock == nil then
         print(devnum, 'Unable to connect to', ip, 'with', code, err)
         return
