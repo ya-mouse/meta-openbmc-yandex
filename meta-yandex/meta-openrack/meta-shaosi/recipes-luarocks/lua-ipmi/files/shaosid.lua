@@ -74,7 +74,6 @@ end
 
 local ipmi_ev = {}
 local ipmi_devs = {}
--- local sock, code, err = nixio.connect('2a02:6b8:0:2e0d:ffff:0:a0f:fe6c', 623)
 
 local db_resty = nixio.socket('unix', 'stream')
 if not db_resty:connect('/run/openresty/socket') then exit(-1) end
@@ -96,8 +95,8 @@ getmetatable(db_resty).request = function(self, devnum, name, value, method)
 end
 local db_que = {}
 
-local ipmi_cmds
-local ipmi_sdrs = {
+local O_ipmi_sdrs = {}
+local L_ipmi_sdrs = {
   -- pattern | round | ttl | *replace pattern
   {'CPU[0-9]_TEMP', 2, 60.0},
   {'NVME_([0-9])_TEMP', 2, 60.0},
@@ -112,23 +111,12 @@ local ipmi_sdrs = {
 }
 
 local rounds = 0
-ipmi_cmds = {
-    [0] = {
-        { function(self, response)
-        -- print('SESS INFO:'..tostring(self.n), response:byte(7), self._ver, self._mfg, self._prod, self._builtin_sdr)
-        end, 0x6, 0x3d },
-    },
-
-    [3] = {
-        { function(self, response)
-            print(self.n, 'tm', self._tm, 'delta', self._tm_delta, 'round', self._round, '10 INTERVAL', 'rounds', rounds)
-            if #response == 7 then return true end
-            db_resty:request(self.n, 'type', response:byte(8+3))
-            db_resty:request(self.n, 'rackid', response:sub(8+5, 8+14))
-            db_resty:request(self.n, 'slotid', response:byte(8+15))
-        end, 0x38, 0x30, 0x00 },
+local L_ipmi_cmds
+local O_ipmi_cmds = {
+    [10] = {
         { function(self, response)
             if #response == 7 then return true end
+            if #response ~= 41 then return false end
             local ip = ''
             local getmac = function(o)
                 local s, i
@@ -142,14 +130,38 @@ ipmi_cmds = {
             for i=0,3 do
                 ip = ip .. string.format('%d.', response:byte(8+i))
             end
-            db_resty:request(self.n, 'ipv4', ip:sub(1, -2))
+            ip = ip:sub(1, -2)
+            db_resty:request(self.n, 'ipv4', ip)
+            if self._lan == nil then
+                L_ipmi_add(self.n, ip)
+            end
             for i=0,3 do
                 local n = string.format('mac/eth%d', i-1)
                 if i == 0 then n = 'mac/ipmi' end
                 local mac = getmac(8+4 + 6*i)
                 if mac ~= '00:00:00:00:00:00' then db_resty:request(self.n, n, mac) end
             end
+            return true
         end, 0x38, 0x30, 0x02 },
+    },
+
+}
+
+L_ipmi_cmds = {
+    [0] = {
+        { function(self, response)
+         print('SESS INFO:'..tostring(self.n), response:byte(7), self._ver, self._mfg, self._prod, self._builtin_sdr)
+        end, 0x6, 0x3d },
+    },
+
+    [10] = {
+        { function(self, response)
+            print(self.n, 'tm', self._tm, 'delta', self._tm_delta, 'round', self._round, '10 INTERVAL', 'rounds', rounds)
+            if #response == 7 then return true end
+            db_resty:request(self.n, 'type', response:byte(8+3))
+            db_resty:request(self.n, 'rackid', response:sub(8+5, 8+14))
+            db_resty:request(self.n, 'slotid', response:byte(8+15))
+        end, 0x38, 0x30, 0x00 },
     },
 
     sdr_read = function(self, name, value)
@@ -160,8 +172,10 @@ ipmi_cmds = {
     end,
 
     ready = function(self)
-        if not self._DEBUG then print('READY '..tostring(self.n), cjson_encode(self.sdr_names)) end
-        db_resty:request(self.n, '', cjson_encode(self.sdr_names))
+        if not self._DEBUG then print('READY', self.n, self.ip, cjson_encode(self.sdr_names)) end
+        if next(self.sdr_names) ~= nil then
+            db_resty:request(self.n, '', cjson_encode(self.sdr_names))
+        end
     end
 }
 
@@ -175,8 +189,6 @@ function ipmi_uloop_cb(ufd, events)
         end
 end
 
---    ipmi_ev[sock:getfd()] = ipmi.lan:new(sock, 'ADMIN', 'ADMIN', ipmi_cmds)
-
 function update_nodes_list()
     local k, nodes
     nodes = {}
@@ -186,10 +198,10 @@ function update_nodes_list()
     db_resty:request('nodes', '', cjson_encode(nodes))
 end
 
-function ipmi_add(devnum)
+function O_ipmi_add(devnum)
     if ipmi_devs[devnum] ~= nil then return end
 
-    local oip = ipmi.open:new(devnum, ipmi_cmds, ipmi_sdrs)
+    local oip = ipmi.open:new(devnum, O_ipmi_cmds, O_ipmi_sdrs)
     local ufd = oip.f:getfd()
     ipmi_ev[ufd] = oip
     ipmi_devs[devnum] = ufd
@@ -204,7 +216,33 @@ function ipmi_add(devnum)
     update_nodes_list()
 end
 
-function ipmi_del(devnum)
+function L_ipmi_add(devnum, ip)
+    local ufd = ipmi_devs[devnum]
+    local oip = ipmi_ev[ufd]
+    if oip == nil or oip._lan ~= nil then return end
+
+    local sock, code, err = nixio.connect(ip, 623, 'inet', 'dgram')
+    if sock == nil then
+        print(devnum, 'Unable to connect to', ip, 'with', code, err)
+        return
+    end
+
+    local lip = ipmi.lan:new(sock, 'ADMIN', 'ADMIN', L_ipmi_cmds, L_ipmi_sdrs)
+    local ufd = sock:getfd()
+    ipmi_ev[ufd] = lip
+    oip._lan = ufd
+    lip.n = devnum
+    lip.ip = ip
+    -- oip._DEBUG = true
+    -- lip._DEBUG = true
+
+    local u = uloop.fd_add(sock, ipmi_uloop_cb, uloop.ULOOP_READ)
+    lip._u = u
+    lip._stopped = false
+    lip:send()
+end
+
+function O_ipmi_del(devnum)
     local ufd = ipmi_devs[devnum]
     if ufd == nil then return end
     local oip = ipmi_ev[ufd]
@@ -221,10 +259,25 @@ function ipmi_del(devnum)
         db_resty:request(devnum, format.string('mac/eth%d', i), nil, 'DELETE')
     end
     oip:close()
+
+    L_ipmi_del(devnum)
+
     ipmi_ev[ufd] = nil
     ipmi_devs[devnum] = nil 
 
     update_nodes_list()
+end
+
+function L_ipmi_del(devnum)
+    local ufd = ipmi_devs[devnum]
+    if ufd == nil then return end
+    local oip = ipmi_ev[ufd]
+    if oip == nil or oip._lan == nil then return end
+
+    local lip = oip._lan
+    lip:close()
+
+    oip._lan = nil
 end
 
 function resty_event(ufd, events)
@@ -305,11 +358,11 @@ sdr_timer = uloop.timer(function()
                 if i ~= -1 then
                     args = { '-r', i }
                 end
-                ipmi_del(k-1)
+                O_ipmi_del(k-1)
             elseif i == -1 then
                 -- Run when no same overlay loaded
                 args = { overlay }
-                ipmi_add(k-1)
+                O_ipmi_add(k-1)
             end
 
             -- Lock and run
