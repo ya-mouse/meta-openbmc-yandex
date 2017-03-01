@@ -155,7 +155,15 @@ local O_ipmi_cmds = {
 L_ipmi_cmds = {
     [0] = {
         { function(self, response)
-         print('SESS INFO:'..tostring(self.n), response:byte(7), self._ver, self._mfg, self._prod, self._builtin_sdr)
+          if #response < 11 then return false end
+          local sescnt = band(response:byte(8+3), 0x3f)
+          if sescnt >= 10 and not (self._mfg == 42385 and obj._prod == 1) then -- exclude AIC RMM
+              print(self.n, 'Maximum session count exceeded', sescnt, 'Restart BMC')
+              self:_send_payload(0x6, 0x02)
+              self._stopped = true
+              self._logged = false
+          end
+          -- print('SESS INFO:'..tostring(self.n), band(response:byte(8+3), 0x3f), self._ver, self._mfg, self._prod, self._builtin_sdr)
         end, 0x6, 0x3d },
     },
 
@@ -171,12 +179,15 @@ L_ipmi_cmds = {
 
     sdr_read = function(self, name, value)
         db_que[name] = value
-        if not self._DEBUG then print('GOT READ: ', self.n, name, value, 'round', self._round, 'retries', self._retry) end
+        if not self._DEBUG then print('GOT READ: ', self.n, name, value, 'round', self._round, 'retries', self._retry, self._stopped) end
         self._retry = 0
         db_resty:request(self.n, name, { value = value, duration = self.sdr_ttl[name] })
     end,
 
     ready = function(self)
+        -- Add Session ID to the command's param
+        self._cmds[0][1][4] = '\xff' .. self._sessionid
+
         if not self._DEBUG then print('READY', self.n, self.ip, cjson_encode(self.sdr_names)) end
         if next(self.sdr_names) ~= nil then
             db_resty:request(self.n, '', cjson_encode(self.sdr_names))
@@ -206,7 +217,9 @@ end
 function O_ipmi_add(devnum)
     if ipmi_devs[devnum] ~= nil then return end
 
-    local oip = ipmi.open:new(devnum, O_ipmi_cmds, O_ipmi_sdrs)
+--    if devnum ~= 0 then return end
+
+    local oip = ipmi.open:new(devnum, O_ipmi_cmds, O_ipmi_sdrs, 4)
     local ufd = oip.f:getfd()
     ipmi_ev[ufd] = oip
     ipmi_devs[devnum] = ufd
@@ -269,7 +282,7 @@ function O_ipmi_del(devnum)
     db_resty:request(devnum, 'ipv4', nil, 'DELETE')
     db_resty:request(devnum, 'mac/ipmi', nil, 'DELETE')
     for i=0,4 do
-        db_resty:request(devnum, format.string('mac/eth%d', i), nil, 'DELETE')
+        db_resty:request(devnum, string.format('mac/eth%d', i), nil, 'DELETE')
     end
     oip:close()
 
