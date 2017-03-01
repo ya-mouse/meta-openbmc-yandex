@@ -248,7 +248,6 @@ end
 function _L._initsession(self)
     self._cycles = 0
     self._logged = false
-    self._stopped = true
     self._localsid = stunpack('>I', 'MAYC')-1
     self._privlevel = 4 -- admin access
     self._confalgo = 0
@@ -272,7 +271,7 @@ function _L._initsession(self)
                         -- be 0x81 through 0x8d. We'll stick with 0x81 for now,
                         -- do not forsee a reason to adjust
     self._cmdidx = 0
-    self._send = _L._get_channel_auth_cap -- _L._presence_ping
+    self._send = _L._presence_ping
     self._recv = false
     self._oldpayload = false
 end
@@ -364,6 +363,7 @@ function _L._pack_payload(self, payload, payload_type)
         end
     elseif self._ipmiversion == 0x20 then
         --
+        print('IPMI v2.0')
     end
 
     if self._sequencenumber ~= 0 then
@@ -375,6 +375,7 @@ end
 
 function _L.send(self)
     if self._send and not self._stopped then
+        -- print(self.ip, prettyinfo(self, self._send))
         return self:_send()
     else
         return 0
@@ -383,7 +384,7 @@ end
 
 function _L.recv(self)
     local data = self._sock:recv(1024)
-    if #data == 0 then return false end
+    if data == nil or #data == 0 then return false end
 
     local payload
     local is_asf = false
@@ -453,6 +454,23 @@ function _L._got_logout(self, response)
     self._send = false
     self._logged = false
     self._stopped = true
+    return true
+end
+
+function _L._presence_ping(self)
+    self._send = _L._get_channel_auth_cap
+    self._recv = _L._presence_pong
+    local message = { 0x6, 0, 0xff, 0x06,
+        0, 0, 0x11, 0xbe, 0x80, 0, 0, 0 }
+    
+    if self._sequencenumber ~= 0 then
+        self._sequencenumber = self._sequencenumber + 1
+    end
+
+    return self._sock:send(stpack(string.rep('B', #message), unpack(message)))
+end
+
+function _L._presence_pong(self, response)
     return true
 end
 
@@ -596,10 +614,10 @@ function _L._got_product_id(self, response)
         self._send = _L._get_sdr_info
     else
         self._logged = true
-        self._send = false
-        self._stopped = true
+        self._send = _L._process_next_cmd
+        -- self._stopped = true
         if self._ready_cb then self:_ready_cb() end
-        if self._DEBUG then print(self.n, 'READY!') end
+        if not self._DEBUG then print(self.n, 'READY!') end
     end
 
     return true
@@ -825,10 +843,10 @@ function _L._next_sdr_or_ready(self)
         self._sdr_idx = 0
         self._sdr_cached = true
         self._logged = true
-        self._send = false
-        self._stopped = true
+        self._send = _L._process_next_cmd
+        -- self._stopped = true
         if self._ready_cb then self:_ready_cb() end
-        if self._DEBUG then print(self.n, 'READY!') end
+        if not self._DEBUG then print(self.n, 'READY!') end
     else
         self._send = _L._get_sdr_header
     end
@@ -889,6 +907,7 @@ end
 
 function _L._process_next_cmd(self)
     if next(self._cmds) == nil then
+        print(self.ip, 'NO MORE COMMANDS')
         self._stopped = true
         return 0
     end
@@ -936,12 +955,21 @@ function _L._got_next_cmd(self, response)
 end
 
 function _L.process_commands(self)
-    if not self._logged or not self._stopped then return 0 end
+    if not self._logged and self._send then
+         if self._timedout == nil then
+             self._timedout = true
+         else
+             self._timedout = nil
+             return self:_send()
+         end
+    end
+    if not self._stopped then return 0 end
 
     local tm = self._tm or 0
     self._tm = gettimeofday()
     self._tm_delta = self._tm - tm
     self._stopped = false
+    self._timedout = nil
     self._send = self._process_next_cmd
     return self:send()
 end
@@ -1084,22 +1112,6 @@ function _O.recv(self)
 end
 
 _O._process_next_cmd = _L._process_next_cmd
-
-function aaa(self)
-    if next(self._cmds) == nil then
-        self._stopped = true
-        return 0
-    end
-    self._recv = _L._got_next_cmd
-    local cmd = self._cmds[self._cmdidx + 1]
-    if type(cmd[4]) == 'table' then
-        return self:_send_payload(cmd[2], cmd[3], unpack(cmd[4] or {}))
-    elseif cmd[4] then
-        return self:_send_payload(cmd[2], cmd[3], cmd[4])
-    else
-        return self:_send_payload(cmd[2], cmd[3])
-    end
-end
 
 _L._fpn = {}
 _O._fpn = {}
