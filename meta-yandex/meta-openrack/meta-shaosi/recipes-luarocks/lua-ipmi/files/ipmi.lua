@@ -220,12 +220,12 @@ function _L.new(self, sock, user, passwd, cmds, sdrs, authtype)
     local i, c
     for i, c in pairs(cmds or {}) do
         if type(i) == 'number' then
-        t._cmds[i] = {}
-        local tc = t._cmds[i]
-        local ci, cv
-        for ci, cv in ipairs(c) do
-            tc[ci] = cv
-        end
+            t._cmds[i] = {}
+            local tc = t._cmds[i]
+            local ci, cv
+            for ci, cv in ipairs(c) do
+                tc[ci] = cv
+            end
             table.insert(t._intervals, i)
             t._max_interval = max(i, t._max_interval)
             tc._idx = 0
@@ -375,7 +375,7 @@ end
 
 function _L.send(self)
     if self._send and not self._stopped then
-        -- print(self.ip, prettyinfo(self, self._send))
+        -- if self._DEBUG then print(self.n, prettyinfo(self, self._send), 'stopped', self._stopped, 'logged', self._logged, 'tout', self._timedout) end
         return self:_send()
     else
         return 0
@@ -617,7 +617,7 @@ function _L._got_product_id(self, response)
         self._send = _L._process_next_cmd
         -- self._stopped = true
         if self._ready_cb then self:_ready_cb() end
-        if not self._DEBUG then print(self.n, 'READY!') end
+        if not self._DEBUG then print(self.ip or self.n, 'READY!') end
     end
 
     return true
@@ -694,12 +694,10 @@ function _L._get_sdr_record(self)
 end
 
 function _L._got_sdr_record(self, record)
-    local sdr_type = byte(record, 17)
-
     if #record < 30 then -- FIXME: check for minimal length of COMPACT_SENSOR record
         if #record ~= 7 then
             _L._next_sdr_or_ready(self)
-            if not self._DEBUG then print('_L._next_sdr_or_ready', sdr_type, byte(record, 8+8), nixio.bin.hexlify(record)) end
+            if self._DEBUG then print('_L._next_sdr_or_ready', self._sdr_type, byte(record, 8+8), nixio.bin.hexlify(record)) end
             return true
         end
 
@@ -709,7 +707,7 @@ function _L._got_sdr_record(self, record)
             if self._retry < 4 then
                self._retry = self._retry + 1
             else
-               print(self.n, rc, 'timeouted')
+               -- print(self.n, rc, 'timeouted')
                self._stopped = true
                self._retry = 0
             end
@@ -720,16 +718,17 @@ function _L._got_sdr_record(self, record)
         return true
     end
 
-    local name
+    local name, size
 
     if self._sdr_type == 2 then
-         name = sub(record, 37)
+         size = band(byte(record, 36), 0x1f)
+         name = sub(record, 37, 36+size):upper()
     else
-         local size = band(byte(record, 52), 0x1f)
+         size = band(byte(record, 52), 0x1f)
          name = sub(record, 53, 52+size):upper()
     end
 
-    if sdr_type ~= 0x01 and sdr_type ~= 0x04 and sdr_type ~= 0x08 and sdr_type ~= 0x0d then
+    if self._sdr_type ~= 0x01 and self._sdr_type ~= 0x02 and self._sdr_type ~= 0x04 and self._sdr_type ~= 0x08 and self._sdr_type ~= 0x0d then
         _L._next_sdr_or_ready(self)
         return true
     end
@@ -862,7 +861,7 @@ function _L._cmd_got_sensor_reading(self, resp)
             if self._retry < 4 then
                self._retry = self._retry + 1
             else
-               print(self.n, rc, 'timeouted')
+               -- print(self.n, rc, 'timeouted')
                self._stopped = true
                self._retry = 0
             end
@@ -907,7 +906,6 @@ end
 
 function _L._process_next_cmd(self)
     if next(self._cmds) == nil then
-        print(self.ip, 'NO MORE COMMANDS')
         self._stopped = true
         return 0
     end
@@ -923,47 +921,82 @@ function _L._process_next_cmd(self)
     end
 end
 
+function _L.next_interval(self, iv)
+    local i, v
+    local ci = self._intervals[iv] or -1
+    for i, v in ipairs(self._intervals) do
+        if self._DEBUG then print('ci', ci, 'i', i, 'v', v, 'cur', self._interval, 'round', self._round, '%', self._round % v, 'max interval', self._max_interval) end
+        -- on zero-round run all, then exclude zero-round commands
+        if (v > ci) and (self._round == 0 or (v ~= 0 and self._round % v == 0)) then
+            if self._DEBUG then print('NEW INTERVAL', i,'v',v,'round', self._round) end
+            return true, i
+        end
+    end
+    return false, -1
+end
+
 function _L._got_next_cmd(self, response)
     local c = self._cmds[self._intervals[self._interval]]
     if c[c._idx + 1][1](self, response) == false then
-        if self._DEBUG then print(self.n, 'FAIL', self:prettyinfo(self._recv), self:prettyinfo(self._send)) end
+        if self._DEBUG then print(self.n, 'FAIL', prettyinfo(self, self._recv), prettyinfo(self, self._send)) end
         return false
     end
+
     c._idx = (c._idx + 1) % #c
     if c._idx == 0 then
-        -- print(self.n, self._interval, self._intervals[self._interval], #self._intervals)
-        local i, v, oi
-        oi = self._interval
-        for i, v in ipairs(self._intervals) do
-            if v >= self._interval and self._round % v == 0 then
-                self._interval = i
-                break
+        -- if true then print(self.n, 'idx', self._interval, 'interval', self._intervals[self._interval], '#intervals', #self._intervals) end
+        -- get next interval for the same round
+        local ok, ni = _L.next_interval(self, self._interval)
+        if not ok then
+            local cr = self._round
+            repeat
+               self._round = self._round + 1
+               if self._round > self._max_interval then self._round = 1 end
+               ok, ni = _L.next_interval(self, ni)
+            until ok or self._round == cr
+            -- restore old round value
+            if self._round == cr or cr == 0 then
+                self._round = 1
+            else
+                self._round = cr + 1
             end
+            self._interval = ni
+            self._stopped = true
+            if self._DEBUG ~= nil then print(self.n, 'ROUND', self._round, 'stopped', self._stopped, 'logged', self._logged, 'tout', self._timedout, 'interval', self._interval) end
+        else
+            self._interval = ni
         end
-        if oi == self._interval then self._interval = 0 end
     end
-    if self._interval == 0 then
-        self._round = self._round + 1
-        self._interval = 1
-        -- print(self.n, 'ROUND', self._round, self._stopped, self._logged)
-        self._stopped = true
-    end
-    -- TODO: check for max_rounds
-    if self._round > 0 and self._round % self._max_interval == 0 then self._stopped = true end
 
     return true
 end
 
 function _L.process_commands(self)
-    if not self._logged and self._send then
+    -- check current round & interval
+    if self._round > 0 and self._round % self._intervals[self._interval] ~= 0 then
+         print('NEXT ROUND', self._round, 'interval', self._interval, 'v', self._intervals[self._interval], 'id', self.ip or self.n)
+         self._round = self._round + 1
+         if self._round >= self._max_interval then self._round = 1 end
+         return 0
+    end
+
+    if self._send then
+         if not self._DEBUG then print('PROCESS', prettyinfo(self, self._send), 'logged', self._logged, 'stopped', self._stopped, 'tout', self._timedout, 'round', self._round, 'id', self.ip or self.n) end
+         -- handle timeouts, first run starts counting
          if self._timedout == nil then
-             self._timedout = true
+             self._timedout = 0
+         -- ...for the next three iterations
+         elseif self._timedout < 3 and self._logged then
+             self._timedout = self._timedout + 1
+         -- ...and fire re-send on 4th
          else
              self._timedout = nil
              return self:_send()
          end
+    else
+         if self.ip ~= nil then print(self.n, self.ip, 'PROCESS send NULL', 'logged', self._logged, 'stopped', self._stopped, 'tout', self._timedout) end
     end
-    if not self._stopped then return 0 end
+    if not self._logged or not self._stopped then return 0 end
 
     local tm = self._tm or 0
     self._tm = gettimeofday()
