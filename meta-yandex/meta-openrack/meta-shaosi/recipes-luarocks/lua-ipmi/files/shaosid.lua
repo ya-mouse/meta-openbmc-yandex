@@ -82,6 +82,7 @@ getmetatable(db_resty).request = function(self, devnum, name, value, method)
     -- TODO: keep values in array and post it independetly in coroutine
     local body = cjson_encode({ data = value })
     if name ~= '' then name = '/'..name end
+    if type(devnum) == 'number' then devnum = devnum + 1 end
     body = (method or 'POST')..' /api/storage/'..board_number..'/'..tostring(devnum)..name.." HTTP/1.1\r\nUser-Agent: collector/1.0\r\nAccept: */*\r\nHost: localhost\r\nContent-type: application/json\r\nConnection: keep-alive\r\nContent-Length: "..#body.."\r\n\r\n"..body.."\r\n\r\n"
     local cnt, errno, errmsg = db_resty:write(body)
     if errno ~= nil then
@@ -115,7 +116,7 @@ local L_ipmi_sdrs = {
 local rounds = 0
 local L_ipmi_cmds
 local O_ipmi_cmds = {
-    [10] = {
+    [9] = {
         { function(self, response)
             if #response == 7 then return true end
             if #response ~= 41 then return false end
@@ -144,6 +145,7 @@ local O_ipmi_cmds = {
                     L_ipmi_add(self.n, response:byte(8+4 + 6*i, 8+4 + 6*(i+1) - 1))
                     n = 'mac/ipmi'
                 end
+                print(self.n, i, mac)
                 if mac ~= '00:00:00:00:00:00' then db_resty:request(self.n, n, mac) end
             end
             return true
@@ -169,8 +171,8 @@ L_ipmi_cmds = {
 
     [10] = {
         { function(self, response)
-            print(self.n, 'tm', self._tm, 'delta', self._tm_delta, 'round', self._round, '10 INTERVAL', 'rounds', rounds)
             if #response == 7 then return true end
+            if not self._debug then print('rackid', response:sub(8+5, 8+14)) end
             db_resty:request(self.n, 'type', response:byte(8+3))
             db_resty:request(self.n, 'rackid', response:sub(8+5, 8+14))
             db_resty:request(self.n, 'slotid', response:byte(8+15))
@@ -179,13 +181,14 @@ L_ipmi_cmds = {
 
     sdr_read = function(self, name, value)
         db_que[name] = value
-        if not self._DEBUG then print('GOT READ: ', self.n, name, value, 'round', self._round, 'retries', self._retry, self._stopped) end
+        if not self._DEBUG then print('GOT READ: ', self.n, name, value, 'round', self._round, 'retries', self._retry, 'stopped', self._stopped, 'logged', self._logged, 'tout', self._timedout) end
         self._retry = 0
         db_resty:request(self.n, name, { value = value, duration = self.sdr_ttl[name] })
     end,
 
     ready = function(self)
         -- Add Session ID to the command's param
+        self._fpn[self._cmds[10][1][1]] = '_recv_38_30_00'
         self._cmds[0][1][4] = '\xff' .. self._sessionid
 
         if not self._DEBUG then print('READY', self.n, self.ip, cjson_encode(self.sdr_names)) end
@@ -198,8 +201,14 @@ L_ipmi_cmds = {
 function ipmi_uloop_cb(ufd, events)
         local icli = ipmi_ev[ufd:getfd()]
         if icli then
-           icli:recv()
-           if not icli._logged or not icli._stopped then
+           if events ~= 1 and icli.ip ~= nil then
+               print('\n\n               CLOSE IPMI', icli.n, '\n')
+               L_ipmi_del(icli.n)
+               return
+           end
+           local rc = icli:recv()
+           if rc and not icli._stopped then
+           -- if not icli._logged or not icli._stopped then
                icli:send()
            end
         end
@@ -209,7 +218,7 @@ function update_nodes_list()
     local k, nodes
     nodes = {}
     for k, _ in pairs(ipmi_devs) do
-        table.insert(nodes, k)
+        table.insert(nodes, k+1)
     end
     db_resty:request('nodes', '', cjson_encode(nodes))
 end
@@ -217,7 +226,7 @@ end
 function O_ipmi_add(devnum)
     if ipmi_devs[devnum] ~= nil then return end
 
---    if devnum ~= 0 then return end
+    -- if devnum ~= 2 then return end
 
     local oip = ipmi.open:new(devnum, O_ipmi_cmds, O_ipmi_sdrs, 4)
     local ufd = oip.f:getfd()
@@ -262,7 +271,7 @@ function L_ipmi_add(devnum, ...)
     -- oip._DEBUG = true
     -- lip._DEBUG = true
 
-    local u = uloop.fd_add(sock, ipmi_uloop_cb, uloop.ULOOP_READ)
+    local u = uloop.fd_add(sock, ipmi_uloop_cb, uloop.ULOOP_READ + 0x40)
     lip._u = u
     lip._stopped = false
     lip:send()
@@ -281,7 +290,7 @@ function O_ipmi_del(devnum)
     local i
     db_resty:request(devnum, 'ipv4', nil, 'DELETE')
     db_resty:request(devnum, 'mac/ipmi', nil, 'DELETE')
-    for i=0,4 do
+    for i=1,3 do
         db_resty:request(devnum, string.format('mac/eth%d', i), nil, 'DELETE')
     end
     oip:close()
