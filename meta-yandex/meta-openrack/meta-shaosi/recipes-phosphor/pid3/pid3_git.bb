@@ -23,6 +23,7 @@ do_install_append () {
     mv ${D}${sbindir}/pid ${D}${sbindir}/pid3
 
     install -d ${D}${sysconfdir}/pid3
+    install -d ${D}${sysconfdir}/systemd/system/obmc-pid3.service.d
     install -d ${D}${systemd_unitdir}/system
     install -m 0644 ${WORKDIR}/pid3.service ${D}${systemd_unitdir}/system/obmc-pid3.service
     for c in jbod node nvme; do
@@ -49,6 +50,7 @@ fi
 CONFFILES_${PN} += "${sysconfdir}/pid3/*.conf"
 
 FILES_${PN} = "${sbindir}/pid3 \
+               ${sysconfdir}/systemd/system/obmc-pid3.service.d \
                ${sysconfdir}/pid3/*.conf \
                ${systemd_unitdir}/system/obmc-pid3.service \
 "
