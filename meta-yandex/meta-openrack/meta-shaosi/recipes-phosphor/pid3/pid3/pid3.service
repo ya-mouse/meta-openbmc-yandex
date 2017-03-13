@@ -2,9 +2,9 @@
 Description=PID3 daemon
 After=obmc-shaosid.service
 [Service]
-Type=forking
+Type=simple
 Restart=always
-PIDFile=/run/obmc-pid3.pid
-ExecStart=/usr/sbin/pid3 --address 127.0.0.1 -c ${CB_N:-0} -u 1 2 3 4 5 6 -f 1 2 3 4 5 6 7 8 --node /etc/pid3/node.conf --nvme /etc/pid3/nvme.conf --jbod /etc/pid3/jbod.conf
+RestartSec=0
+ExecStart=/usr/sbin/pid3 --address 127.0.0.1 -c "${CB_N}" -u 1 2 3 4 5 6 -f 1 2 3 4 5 6 7 8 --node /etc/pid3/node.conf --nvme /etc/pid3/nvme.conf --jbod /etc/pid3/jbod.conf
 [Install]
 WantedBy=network.target
