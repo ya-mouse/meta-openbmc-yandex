@@ -1,0 +1,29 @@
+--- a/httpapi.cpp.orig	2017-03-13 13:35:23.000000000 +0300
++++ b/httpapi.cpp	2017-03-13 17:14:40.965436465 +0300
+@@ -43,7 +43,7 @@ Net::Net(const std::string& addr_str_p,
+ 	curlpp::types::WriteFunctionFunctor functor(StringCallback);
+ 	curlpp::options::WriteFunction *cb = new curlpp::options::WriteFunction(functor);
+ 	myReq.setOpt(new curlpp::options::Url(addr_str));
+-	myReq.setOpt(new curlpp::options::SslEngineDefault());
++	// myReq.setOpt(new curlpp::options::SslEngineDefault());
+ 	myReq.setOpt(cb);
+ 	// myReq.setOpt(new curlpp::options::Verbose(true));
+ 
+@@ -90,7 +90,7 @@ std::string Net::Post(const std::string&
+ 	curlpp::types::WriteFunctionFunctor functor(StringCallback);
+ 	curlpp::options::WriteFunction *cb = new curlpp::options::WriteFunction(functor);
+ 	myReq.setOpt(new curlpp::options::Url(addr_str));
+-	myReq.setOpt(new curlpp::options::SslEngineDefault());
++	// myReq.setOpt(new curlpp::options::SslEngineDefault());
+ 	myReq.setOpt(cb);
+ 	// myReq.setOpt(new curlpp::options::Verbose(true));
+ 
+@@ -126,7 +126,7 @@ std::string Net::Get(const std::string &
+ 	curlpp::types::WriteFunctionFunctor functor(StringCallback);
+ 	curlpp::options::WriteFunction *cb = new curlpp::options::WriteFunction(functor);
+ 	myReq.setOpt(new curlpp::options::Url(addr_str));
+-	myReq.setOpt(new curlpp::options::SslEngineDefault());
++	// myReq.setOpt(new curlpp::options::SslEngineDefault());
+ 	myReq.setOpt(cb);
+ 	// myReq.setOpt(new curlpp::options::Verbose(true));
+ 

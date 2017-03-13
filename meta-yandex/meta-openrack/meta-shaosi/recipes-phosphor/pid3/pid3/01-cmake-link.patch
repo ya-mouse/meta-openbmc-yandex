@@ -1,0 +1,8 @@
+--- a/CMakeLists.txt.orig	2017-03-13 13:18:51.000000000 +0300
++++ b/CMakeLists.txt	2017-03-13 13:27:57.456436598 +0300
+@@ -7,4 +7,4 @@ set(SOURCE_FILES main.cpp node.cpp node.
+ rackapi.cpp rackapi.h logging.h parser.cpp parser.h cmd.cpp cmd.h httpapi.cpp httpapi.h)
+ 
+ add_executable(pid ${SOURCE_FILES})
+-target_link_libraries(pid libcurlpp.a curl)
++target_link_libraries(pid curlpp curl)
