@@ -974,9 +974,9 @@ end
 function _L.process_commands(self)
     -- check current round & interval
     if self._round > 0 and self._round % self._intervals[self._interval] ~= 0 then
-         print('NEXT ROUND', self._round, 'interval', self._interval, 'v', self._intervals[self._interval], 'id', self.ip or self.n)
+         print('NEXT ROUND', self._round, 'interval', self._interval, 'max', self._max_interval, 'v', self._intervals[self._interval], 'id', self.ip or self.n)
          self._round = self._round + 1
-         if self._round >= self._max_interval then self._round = 1 end
+         if self._round > self._max_interval then self._round = 1 end
          return 0
     end
 
