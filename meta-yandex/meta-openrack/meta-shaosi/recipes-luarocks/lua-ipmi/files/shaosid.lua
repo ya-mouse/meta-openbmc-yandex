@@ -105,6 +105,7 @@ local L_ipmi_sdrs = {
   {'NVME_([0-9])_TEMP', 2, 60.0},
   {'SATA[0-9]+_TEMP', 2, 60.0},
   {'SIO_TEMP_[0-9]', 2, 60.0},
+  {'BP[12]_HDD_TEMP[12]', 2, 60.0},
   {'.+_TEMP', 2, 60.0},
   {'SYS_PWR', 2, 60.0},
   {'P12V', 2, 60.0},
@@ -172,16 +173,17 @@ L_ipmi_cmds = {
     [10] = {
         { function(self, response)
             if #response == 7 then return true end
-            if not self._debug then print('rackid', response:sub(8+5, 8+14)) end
+            local rackid = string.gsub(response:sub(8+5, 8+14), '[^a-zA-Z0-9_.-]', '')
+            if not self._debug then print('rackid', rackid) end
             db_resty:request(self.n, 'type', response:byte(8+3))
-            db_resty:request(self.n, 'rackid', response:sub(8+5, 8+14))
+            db_resty:request(self.n, 'rackid', rackid)
             db_resty:request(self.n, 'slotid', response:byte(8+15))
-        end, 0x38, 0x30, 0x00 },
+        end, 0x38, 0x30, { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } },
     },
 
     sdr_read = function(self, name, value)
         db_que[name] = value
-        if not self._DEBUG then print('GOT READ: ', self.n, name, value, 'round', self._round, 'retries', self._retry, 'stopped', self._stopped, 'logged', self._logged, 'tout', self._timedout) end
+        if self._DEBUG then print('GOT READ: ', self.n, name, value, 'round', self._round, 'retries', self._retry, 'stopped', self._stopped, 'logged', self._logged, 'tout', self._timedout) end
         self._retry = 0
         db_resty:request(self.n, name, { value = value, duration = self.sdr_ttl[name] })
     end,
@@ -250,7 +252,7 @@ function L_ipmi_add(devnum, ...)
 
     if select('#', ...) ~= 6 then return end
 
-    local ip = string.format('fe80::%x%x:%xff:fe%x:%x%x%%%s',
+    local ip = string.format('fe80::%x%02x:%xff:fe%02x:%x%02x%%%s',
         bxor(select(1, ...), 2), select(2, ...),
         select(3, ...), select(4, ...),
         select(5, ...), select(6, ...),

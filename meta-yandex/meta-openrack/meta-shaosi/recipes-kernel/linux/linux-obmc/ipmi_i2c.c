@@ -134,6 +134,7 @@ static void ipmi_i2c_send(void *send_info, struct ipmi_smi_msg *msg)
 	struct ipmb_msg *ipmb_msg;
 	unsigned long flags;
 	int comp, rc;
+	int i;
 	size_t size;
 
 	/* ensure data_len will fit in the opal_ipmi_msg buffer... */
@@ -179,6 +180,13 @@ static void ipmi_i2c_send(void *send_info, struct ipmi_smi_msg *msg)
 	dev_dbg(&smi->client->dev, "%s: ipmi_send(%02x, %02x, %u %u)\n", __func__,
 			ipmb_msg->netfn, ipmb_msg->cmd, msg->data_size, size);
 	smi->buf_off = 0;
+
+	for (i=0; i<size; i++) {
+		dev_dbg(&smi->client->dev, "%02x ", smi->msg->raw[2+i]);
+		if (i && !(i % 16))
+			dev_dbg(&smi->client->dev, "\n");
+	}
+	dev_dbg(&smi->client->dev, "\n");
 
 	rc = i2c_smbus_write_i2c_block_data(smi->client,
 					    smi->msg->raw[1],

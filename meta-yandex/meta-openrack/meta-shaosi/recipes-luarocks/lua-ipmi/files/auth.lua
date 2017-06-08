@@ -88,6 +88,8 @@ end
 function _M.check_sid()
     -- Allow all from unix socket
     if ngx.var.server_addr == 'unix:/run/openresty/socket' then return true end
+    -- Allow all from localhost
+    if ngx.var.remote_addr == '127.0.0.1' or ngx.var.remote_addr == '::1' then return true end
 
     local cookie, err = ck:new()
     local sid, err = cookie:get('sid')

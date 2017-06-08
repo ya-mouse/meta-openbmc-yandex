@@ -1,0 +1,14 @@
+diff --git a/misc.c b/misc.c
+index 5e5ca71..12e3d40 100644
+--- a/misc.c
++++ b/misc.c
+@@ -258,7 +258,9 @@ runon(int argc, const char *argv[], const struct cmd_info *info)
+ 	return -1;
+ }
+ 
++#ifdef ARCH_X86
+ MAKE_PREREQ_PARAMS_VAR_ARGS(cpuid_params, 3, 4, "<cpu> <function> [index]", 0);
++#endif /* #ifdef ARCH_X86 */
+ MAKE_PREREQ_PARAMS_VAR_ARGS(runon_params, 3, INT_MAX, "<cpu> <cmd> [args]", 0);
+ 
+ static const struct cmd_info misc_cmds[] = {

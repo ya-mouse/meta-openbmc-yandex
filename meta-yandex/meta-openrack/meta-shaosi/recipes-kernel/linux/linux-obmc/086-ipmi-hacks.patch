@@ -106,9 +106,9 @@
 +		status_ack |= AST_I2CD_INTR_ABNORMAL;
 +
 +	if (irq_status & AST_I2CD_INTR_TX_ACK) {
-+		dev_err(bus->dev,
-+			"Unexpected ACK on read request (slave=%04x).\n",
-+				bus->slave_state);
++//		dev_err(bus->dev,
++//			"Unexpected ACK on read request (slave=%04x).\n",
++//				bus->slave_state);
 +		status_ack |= AST_I2CD_INTR_TX_ACK;
 +	}
 +
@@ -124,6 +124,18 @@
  		irq_status, command);
  
  	/* Slave was sent something. */
+@@ -612,9 +612,11 @@ static bool ast_i2c_slave_irq(struct ast
+ 	    bus->slave_state == AST_I2C_SLAVE_READ_PROCESSED) {
+ 		if (bus->slave_state == AST_I2C_SLAVE_READ_REQUESTED) {
+ 			event = I2C_SLAVE_READ_REQUESTED;
++#if 0
+ 			if (irq_status & AST_I2CD_INTR_TX_ACK)
+ 				dev_err(bus->dev,
+ 					"Unexpected ACK on read request.\n");
++#endif
+ 		} else {
+ 			status_ack |= AST_I2CD_INTR_TX_ACK;
+ 			event = I2C_SLAVE_READ_PROCESSED;
 @@ -860,7 +866,7 @@ static int ast_i2c_reg_slave(struct i2c_
  
  	/* Switch from master mode to slave mode. */

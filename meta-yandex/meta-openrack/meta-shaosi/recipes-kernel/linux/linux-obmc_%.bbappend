@@ -2,6 +2,8 @@ FILESEXTRAPATHS_prepend := "${THISDIR}/linux-obmc:"
 
 SRC_URI += "file://ipmi_i2c.c"
 SRC_URI += "file://crypto_aspeed-hace.c"
+SRC_URI += "file://ast_crypto.c"
+SRC_URI += "file://pmbus_core.c"
 ## SRC_URI += "file://001-aspeed-rmc-dtsi.patch"
 SRC_URI += "file://002-gb21-rmc.patch"
 SRC_URI += "file://003-i2c-aspeed-put-fix.patch"
@@ -25,6 +27,7 @@ SRC_URI += "file://020-ipmi-i2c-mod.patch"
 SRC_URI += "file://021-i2c-driver-order.patch"
 SRC_URI += "file://022-ftgmac100-sw-reset.patch"
 SRC_URI += "file://023-crypto-hace.patch"
+SRC_URI += "file://024-slave-i2c-16bit.patch"
 
 SRC_URI += "file://080-b53-pvlan-hack.patch"
 ## SRC_URI += "file://081-delay-hack.patch"
@@ -47,5 +50,7 @@ SRC_URI += "file://aspeed-shaosi-gb30.dts"
 
 do_patch_append() {
 	install -m 0644 ${WORKDIR}/ipmi_i2c.c ${STAGING_KERNEL_DIR}/drivers/char/ipmi/ipmi_i2c.c
+	install -m 0644 ${WORKDIR}/pmbus_core.c ${STAGING_KERNEL_DIR}/drivers/hwmon/pmbus/pmbus_core.c
 	install -m 0644 ${WORKDIR}/crypto_aspeed-hace.c ${STAGING_KERNEL_DIR}/drivers/crypto/aspeed-hace.c
+	# install -m 0644 ${WORKDIR}/ast_crypto.c ${STAGING_KERNEL_DIR}/drivers/crypto/aspeed-hace.c
 }

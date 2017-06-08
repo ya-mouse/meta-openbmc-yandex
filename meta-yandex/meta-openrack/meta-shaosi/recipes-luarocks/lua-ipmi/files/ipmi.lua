@@ -552,7 +552,7 @@ end
 function _L._activated_session(self, data)
     self._logontries = 5
     if byte(data, 7) ~= 0 then
-        print('Session activate: '..tostring(byte(data, 7)))
+        -- print('Session activate: '..tostring(byte(data, 7)))
         -- disconnect
         return false
     end
@@ -617,7 +617,7 @@ function _L._got_product_id(self, response)
         self._send = _L._process_next_cmd
         -- self._stopped = true
         if self._ready_cb then self:_ready_cb() end
-        if not self._DEBUG then print(self.ip or self.n, 'READY!') end
+        if self._DEBUG then print(self.ip or self.n, 'READY!') end
     end
 
     return true
@@ -845,7 +845,7 @@ function _L._next_sdr_or_ready(self)
         self._send = _L._process_next_cmd
         -- self._stopped = true
         if self._ready_cb then self:_ready_cb() end
-        if not self._DEBUG then print(self.n, 'READY!') end
+        if self._DEBUG then print(self.n, 'READY!') end
     else
         self._send = _L._get_sdr_header
     end
@@ -974,14 +974,14 @@ end
 function _L.process_commands(self)
     -- check current round & interval
     if self._round > 0 and self._round % self._intervals[self._interval] ~= 0 then
-         print('NEXT ROUND', self._round, 'interval', self._interval, 'max', self._max_interval, 'v', self._intervals[self._interval], 'id', self.ip or self.n)
+         -- print('NEXT ROUND', self._round, 'interval', self._interval, 'max', self._max_interval, 'v', self._intervals[self._interval], 'id', self.ip or self.n)
          self._round = self._round + 1
          if self._round > self._max_interval then self._round = 1 end
          return 0
     end
 
     if self._send then
-         if not self._DEBUG then print('PROCESS', prettyinfo(self, self._send), 'logged', self._logged, 'stopped', self._stopped, 'tout', self._timedout, 'round', self._round, 'id', self.ip or self.n) end
+         if self._DEBUG then print('PROCESS', prettyinfo(self, self._send), 'logged', self._logged, 'stopped', self._stopped, 'tout', self._timedout, 'round', self._round, 'id', self.ip or self.n) end
          -- handle timeouts, first run starts counting
          if self._timedout == nil then
              self._timedout = 0

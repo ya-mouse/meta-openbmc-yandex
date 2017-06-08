@@ -206,6 +206,7 @@
 						label = "POWER_BPB";
 						compatible = "ti,ina219";
 						reg = <0x40>;
+						shunt-resistor = <500>;
 					};
 					tmp@48 {
 						label = "TEMP_BPB";
