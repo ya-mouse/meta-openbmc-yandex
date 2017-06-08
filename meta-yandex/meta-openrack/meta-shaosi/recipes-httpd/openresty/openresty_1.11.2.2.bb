@@ -47,11 +47,15 @@ do_configure () {
 	echo $CFLAGS
 	echo $LDFLAGS
 
+	# Add the LDFLAGS to the main nginx link to avoid issues with missing GNU_HASH
+	#echo "MAIN_LINK=\"\${MAIN_LINK} ${LDFLAGS}\"" >> auto/cc/conf
+
 	./configure \
 	--with-cc="${CC}" \
 	--crossbuild=Linux:${TUNE_ARCH} \
 	--with-endian=${@base_conditional('SITEINFO_ENDIANNESS', 'le', 'little', 'big', d)} \
 	--with-int=4 \
+	--with-ld-opt='${LDFLAGS}' \
 	--with-long=${PTRSIZE} \
 	--with-long-long=8 \
 	--with-ptr-size=${PTRSIZE} \

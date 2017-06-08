@@ -19,7 +19,7 @@ luadir = "/lua/5.1"
 
 MAKE_FLAGS = "'PREFIX=${D}${prefix}' \
 'CFLAGS=${CFLAGS} -Wall -fPIC -std=gnu99 -I${SYSROOTS}${includedir}/luajit-2.1 -I${SYSROOTS}${includedir}/dbus-1.0 -I${SYSROOTS}${libdir}/dbus-1.0/include -I../vendor/compat-5.3/c-api' \
-'LIBS=-ldbus-1 -lluajit-5.1' \
+'LIBS=-ldbus-1 -lluajit-5.1 ${LDFLAGS}' \
 'LUA_LIBDIR=${D}${libdir}${luadir}' \
 "
 

@@ -19,6 +19,7 @@ luadir = "/lua/5.1"
 MAKE_FLAGS = "'CC=${CC}' \
 'LUA_VERSION=jit-5.1' \
 'LUA_CPPFLAGS=-I${SYSROOTS}${includedir}/luajit-2.1' \
+'LUA_LDFLAGS=${LDFLAGS}' \
 'EXTRA_CFLAGS=${CFLAGS}' \
 "
 

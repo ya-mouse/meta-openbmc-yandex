@@ -56,3 +56,5 @@ FILES_${PN} += "${sysconfdir}/overlays \
                 ${sbindir} \
                 ${datadir}/lua/5.1 \
 "
+
+RDEPENDS_${PN} = " luajit"
