@@ -9,15 +9,13 @@
  
  #ifdef CONFIG_AST_SPI_NOR    /* AST SPI NOR Flash */
  #define CONFIG_SYS_MAX_FLASH_BANKS 	(CONFIG_FMC_CS)
-@@ -94,9 +94,9 @@
- #endif
- 
- #define CONFIG_ENV_OFFSET		0x60000	/* environment starts here  */
--#define CONFIG_ENV_SIZE			0x20000	/* Total Size of Environment Sector */
-+#define CONFIG_ENV_SIZE			0x20000	/* Total Size of Environment Sector */
- 
--#define CONFIG_BOOTCOMMAND	"bootm 20080000 20300000"
-+#define CONFIG_BOOTCOMMAND	"mw.l 1e78502c 00000092 1; bootm 20090000 20300000 20080000"
+@@ -99,7 +99,8 @@
+ #define CONFIG_BOOTCOMMAND	\
+ 	"fdt addr 20080000; " \
+ 	"if fdt get value ramdisk_conf /configurations/conf@1 ramdisk; then " \
+-	"    bootm 20080000; else bootm 20080000 20300000; " \
++	"    mw.l 1e78502c 00000092 1; bootm 20080000; else " \
++	"    mw.l 1e78502c 00000092 1; bootm 20090000 20300000 20080000; " \
+ 	"fi"
  #define CONFIG_ENV_OVERWRITE
  
- #define CONFIG_SKIP_LOWLEVEL_INIT 1

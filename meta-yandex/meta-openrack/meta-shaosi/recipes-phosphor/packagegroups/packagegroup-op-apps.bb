@@ -34,7 +34,6 @@ RDEPENDS_${PN}-sensors = " \
 SUMMARY_${PN}-chassis = "OpenRACK Chassis"
 RDEPENDS_${PN}-chassis = " \
         obmc-mgr-inventory \
-        obmc-control-led \
         "
 
 SUMMARY_${PN}-sensors = "OpenRACK Fans"
