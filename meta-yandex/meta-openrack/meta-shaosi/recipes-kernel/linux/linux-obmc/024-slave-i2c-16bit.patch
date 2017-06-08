@@ -1,0 +1,76 @@
+--- source/drivers/i2c/i2c-slave-eeprom.c.orig	2017-02-09 15:25:40.000000000 +0300
++++ source/drivers/i2c/i2c-slave-eeprom.c	2017-02-09 20:41:28.263765222 +0300
+@@ -22,10 +22,13 @@
+ #include <linux/spinlock.h>
+ #include <linux/sysfs.h>
+ 
++#define SLAVE_16BIT_ADDR (1 << 31)
++
+ struct eeprom_data {
+ 	struct bin_attribute bin;
+-	bool first_write;
++	bool sixteen_addr;
+ 	spinlock_t buffer_lock;
++	u8 first_write;
+ 	u8 buffer_idx;
+ 	u8 buffer[];
+ };
+@@ -37,9 +40,12 @@ static int i2c_slave_eeprom_slave_cb(str
+ 
+ 	switch (event) {
+ 	case I2C_SLAVE_WRITE_RECEIVED:
+-		if (eeprom->first_write) {
+-			eeprom->buffer_idx = *val;
+-			eeprom->first_write = false;
++		if (eeprom->first_write == 2) {
++			eeprom->buffer_idx = (*val) << 8;
++			eeprom->first_write--;
++		} else if (eeprom->first_write == 1) {
++			eeprom->buffer_idx |= *val;
++			eeprom->first_write--;
+ 		} else {
+ 			spin_lock(&eeprom->buffer_lock);
+ 			eeprom->buffer[eeprom->buffer_idx++] = *val;
+@@ -64,7 +70,8 @@ static int i2c_slave_eeprom_slave_cb(str
+ 
+ 	case I2C_SLAVE_STOP:
+ 	case I2C_SLAVE_WRITE_REQUESTED:
+-		eeprom->first_write = true;
++		eeprom->first_write = eeprom->sixteen_addr ? 2 : 1;
++		eeprom->buffer_idx = 0;
+ 		break;
+ 
+ 	default:
+@@ -110,11 +117,13 @@ static int i2c_slave_eeprom_probe(struct
+ 	int ret;
+ 	unsigned size = id->driver_data;
+ 
+-	eeprom = devm_kzalloc(&client->dev, sizeof(struct eeprom_data) + size, GFP_KERNEL);
++	eeprom = devm_kzalloc(&client->dev, sizeof(struct eeprom_data) + (size & (~SLAVE_16BIT_ADDR)), GFP_KERNEL);
+ 	if (!eeprom)
+ 		return -ENOMEM;
+ 
+-	eeprom->first_write = true;
++	eeprom->sixteen_addr = !!(size & SLAVE_16BIT_ADDR);
++	eeprom->first_write = eeprom->sixteen_addr ? 2 : 1;
++
+ 	spin_lock_init(&eeprom->buffer_lock);
+ 	i2c_set_clientdata(client, eeprom);
+ 
+@@ -123,7 +132,7 @@ static int i2c_slave_eeprom_probe(struct
+ 	eeprom->bin.attr.mode = S_IRUSR | S_IWUSR;
+ 	eeprom->bin.read = i2c_slave_eeprom_bin_read;
+ 	eeprom->bin.write = i2c_slave_eeprom_bin_write;
+-	eeprom->bin.size = size;
++	eeprom->bin.size = size & (~SLAVE_16BIT_ADDR);
+ 
+ 	ret = sysfs_create_bin_file(&client->dev.kobj, &eeprom->bin);
+ 	if (ret)
+@@ -150,6 +159,7 @@ static int i2c_slave_eeprom_remove(struc
+ 
+ static const struct i2c_device_id i2c_slave_eeprom_id[] = {
+ 	{ "slave-24c02", 2048 / 8 },
++	{ "slave-24c256", 262144 / 8 | SLAVE_16BIT_ADDR },
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(i2c, i2c_slave_eeprom_id);
