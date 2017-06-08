@@ -30,7 +30,7 @@ BUILD_CC_ARCH_append_x86 = ' -m32'
 BUILD_CC_ARCH_append_arm = ' -m32'
 
 EXTRA_OEMAKE_append_class-target = '\
-    CROSS=${HOST_PREFIX} \
+    CROSS=${HOST_PREFIX} Q= \
     HOST_CC="${BUILD_CC} ${BUILD_CC_ARCH}" \
     TARGET_CFLAGS="${TOOLCHAIN_OPTIONS} ${TARGET_CC_ARCH}" \
     TARGET_LDFLAGS="${TOOLCHAIN_OPTIONS}" \
