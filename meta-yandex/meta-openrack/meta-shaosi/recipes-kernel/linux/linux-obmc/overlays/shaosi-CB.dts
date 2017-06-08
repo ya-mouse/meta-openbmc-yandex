@@ -120,7 +120,7 @@
 
 			ipmb {
 				compatible = "i2c-ipmb";
-				reg = <0x11>;
+				reg = <0x10>;
 				slave-addr = <0x36>;
 			};
 		};
@@ -206,6 +206,7 @@
 						label = "POWER_BPB";
 						compatible = "ti,ina219";
 						reg = <0x40>;
+						shunt-resistor = <500>;
 					};
 					tmp@48 {
 						label = "TEMP_BPB";

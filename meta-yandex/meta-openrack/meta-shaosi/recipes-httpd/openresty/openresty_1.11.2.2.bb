@@ -67,6 +67,7 @@ do_configure () {
 	--error-log-path=${localstatedir}/log/nginx/error.log \
 	--pid-path=/run/openresty/openresty.pid \
 	--prefix=${prefix} \
+	--with-ipv6 \
 	--with-http_ssl_module \
 	--with-http_gzip_static_module \
 	\
