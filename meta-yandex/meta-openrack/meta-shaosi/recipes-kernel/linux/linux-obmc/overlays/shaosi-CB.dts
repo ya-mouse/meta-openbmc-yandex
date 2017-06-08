@@ -120,7 +120,7 @@
 
 			ipmb {
 				compatible = "i2c-ipmb";
-				reg = <0x10>;
+				reg = <0x11>;
 				slave-addr = <0x36>;
 			};
 		};
