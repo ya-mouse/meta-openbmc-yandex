@@ -12,8 +12,8 @@ SRC_URI += "file://pid3_wrapper"
 SRC_URI += "file://jbod.conf"
 SRC_URI += "file://node.conf"
 SRC_URI += "file://nvme.conf"
-SRCREV = '1ab1c286b1f157bc98c6530e3aa030884f50d542'
-#SRCREV = '${AUTOREV}'
+#SRCREV = '1ab1c286b1f157bc98c6530e3aa030884f50d542'
+SRCREV = '${AUTOREV}'
 
 S = "${WORKDIR}/git"
 
