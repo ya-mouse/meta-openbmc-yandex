@@ -634,7 +634,12 @@ function _L._got_sdr_info(self, repo)
         return false
     end
     self._sdr[3] = stunpack('<H', sub(repo, 9, 10))
-    self._send = _L._get_sdr_reserve
+--    self._send = _L._get_sdr_reserve
+    self._sdr_recid = 0
+    self._sdr_idx = 0
+    self._sdr_type = 0
+    self._send = _L._get_sdr_header
+
     return true
 end
 
@@ -652,7 +657,7 @@ function _L._got_sdr_reserve(self, response)
         if self._DEBUG then print('_L._got_sdr_reserve fail') end
         return false
     end
-    self._sdr[4] = stunpack('<H', sub(response, 8, 9))
+    -- self._sdr[4] = stunpack('<H', sub(response, 8, 9))
     self._sdr_recid = 0
     self._sdr_idx = 0
     self._sdr_type = 0
