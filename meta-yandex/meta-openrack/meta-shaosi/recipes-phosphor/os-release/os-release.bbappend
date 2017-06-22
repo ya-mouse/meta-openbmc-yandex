@@ -1,14 +1,23 @@
 python() {
         import os
-        v = None
-        p = d.getVar("LAYER_DIR",True) + "/conf/build.id"
+        import subprocess
+        import re
+
+        cwd = os.getcwd()
+        os.chdir(d.getVar("LAYER_DIR",True))
+        t = None
+        ver = None
         try:
-            with open(p, 'r') as f:
-                v = f.read().rstrip('\n')
-            if v:
-                d.setVar('VERSION', '0.1.0-%s' % v)
-                d.setVar('VERSION_ID', '0.1.0-%s' % v)
+            t = subprocess.check_output(['git', 'describe', '--tags']).rstrip()
+            if t:
+                arrv = t.rsplit('-',2)
+                short_ver = re.sub('[^0-9.-]','',arrv[0])
+                short_ver = short_ver + '-' + arrv[1] + '-' + arrv[2]
+                long_ver  = d.getVar('VERSION_ID',True) + '+' + short_ver
+                d.setVar('VERSION', short_ver)
+                d.setVar('VERSION_ID', long_ver)
                 d.setVar('BUILD_ID', d.getVar('DATETIME'))
         except:
-            pass
+           pass
+        os.chdir(cwd)
 }
