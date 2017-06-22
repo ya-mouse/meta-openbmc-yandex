@@ -1,8 +1,9 @@
 python() {
         import os
         v = None
+        p = d.getVar("LAYER_DIR",True) + "/conf/build.id"
         try:
-            with open(os.getenv('BUILDDIR', os.getcwd())+'/conf/build.id', 'r') as f:
+            with open(p, 'r') as f:
                 v = f.read().rstrip('\n')
             if v:
                 d.setVar('VERSION', '0.1.0-%s' % v)
