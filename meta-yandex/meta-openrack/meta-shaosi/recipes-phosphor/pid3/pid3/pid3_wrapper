@@ -86,7 +86,6 @@ while [ 1 ]; do
   PIDPID=$!
  fi
 
- echo "Kids: $(jobs -p) "
  sleep ${SleepTime} 
 done
 
