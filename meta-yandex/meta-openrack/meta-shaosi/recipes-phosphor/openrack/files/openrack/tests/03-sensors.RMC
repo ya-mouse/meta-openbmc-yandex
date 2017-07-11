@@ -1,0 +1,23 @@
+#!/bin/bash -e
+
+# Bind all slave drivers
+sdr_en $I2C_sensors 0x48 tmp75
+i2c_en $I2C_sensors 0x56 24c256
+
+test_sdr_range $I2C_sensors 0x48 temp1 $TEMP_LO $TEMP_HI
+
+# Check FRU
+test_eeprom "Checking FRU" $I2C_sensors 0x56
+
+# Check RTC
+v0=$(hwclock -r)
+hwclock -w
+sleep 3
+v1=$(hwclock -r)
+test_code "Checking RTC set" test "\"$v0\"" != "\"$v1\""
+
+# Unbind all drivers
+i2c_del $I2C_sensors 0x56 2>/dev/null ||:
+sdr_del $I2C_sensors 0x48 2>/dev/null ||:
+
+led_on $LED_OK

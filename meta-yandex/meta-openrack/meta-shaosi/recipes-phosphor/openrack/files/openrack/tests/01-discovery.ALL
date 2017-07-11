@@ -1,0 +1,11 @@
+#!/bin/bash -e
+
+exp="$(cat $WD/$DATA/01-exp_01)"
+test_compare_output "Discovery common on i2c-$I2C_common..." \
+	"$exp" i2c_scan $I2C_common
+
+exp="$(cat $WD/$DATA/01-exp_02-$(board_type))"
+test_compare_output "Discovery sensors on i2c-$I2C_sensors..." \
+	"$exp" i2c_scan $I2C_sensors
+
+led_on $LED_OK

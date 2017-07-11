@@ -1,0 +1,107 @@
+#!/bin/sh -e
+
+. /usr/share/openrack/functions
+
+get_fw_env_var() {
+	# do we have 1 or 2 copies of the environment?
+	# count non-blank non-comment lines
+	# copies=$(grep -v ^# /etc/fw_env.config | grep -c [::alnum::])
+	# ... we could if we had the fw_env.config in the initramfs
+	copies=1
+
+	# * Change \n to \r and \0 to \n
+	# * Skip to the 5th byte to skip over crc
+	# * then skip to the first or 2nd byte to skip over flag if it exists
+	# * stop parsing at first empty line corresponding to the
+	#   double \0 at the end of the environment.
+	# * print the value of the variable name passed as argument
+
+	cat /run/fw_env | 
+	tr '\n\000' '\r\n' |
+	tail -c +5 | tail -c +${copies-1} | 
+	sed -ne '/^$/,$d' -e "s/^$1=//p"
+}
+
+mac0=$(get_fw_env_var ethaddr)
+mac1=$(get_fw_env_var eth1addr)
+serial=$(get_fw_env_var serialnumber)
+factory_test=$(get_fw_env_var factory-test-mode)
+
+a=$(board_addr -f)
+name=$(board_name)
+pos=$(board_position)
+t=$(board_type)${factory_test:+-factory}
+
+# Check for old board type & name
+old_name="$(cat /etc/openrack-board 2>/dev/null ||:)"
+
+if [ "$t" = CB ]; then
+    if [ "$old_name" != "$name" -o ! -f /etc/systemd/system/obmc-pid3.service.d/board.conf ]; then
+        cat<<EOF>/etc/systemd/system/obmc-pid3.service.d/board.conf
+[Service]
+Environment="CB_N=${pos}"
+EOF
+        systemctl daemon-reload
+    fi
+else
+    systemctl disable obmc-pid3.service
+    systemctl daemon-reload
+fi
+
+if [ "$old_name" != "$name" ]; then
+    printf "Phosphor OpenBMC ($name)" | tee /etc/issue /etc/issue.net > /etc/motd
+    printf "\n\n" >> /etc/motd
+    printf " \\\n \\\l\n\n" >> /etc/issue
+    printf " %%h\n\n" >> /etc/issue.net
+    echo "$name" > /etc/openrack-board
+fi
+
+dtoverlay shaosi-$t
+
+# Exit if factory-test-mode is set
+if [ -z "$factory_test" ]; then
+	# Enable HW reset
+	iotools=/usr/sbin/iotools
+	scu3c=$($iotools mmio_read32 0x1e6e203c)
+	scu80=$($iotools mmio_read32 0x1e6e2080)
+	scu3c=$((scu3c | 8))
+	scu80=$((scu80 | 0x8000))
+	$iotools mmio_write32 0x1e6e2080 $scu80
+	$iotools mmio_write32 0x1e6e203c $scu3c
+fi
+
+[ -z "$factory_test" ] || exit 0
+
+# Set default values for FANs
+w83795g_pwm=$(cat /etc/default/obmc/w83795g-pwm 2>/dev/null || echo 140)
+fgrep w83795g /sys/class/hwmon/hwmon*/uevent -l | while read hwmon; do
+    for pwm in ${hwmon%%/uevent}/device/pwm[1-8]; do
+        [ -f "$pwm" ] || continue
+        echo $w83795g_pwm > $pwm
+    done
+done
+
+[ $t = CB ] || a=$(printf "%x" $((9 + a*2)))
+echo slave-24c02 0x103$a > /sys/bus/i2c/devices/i2c-0/new_device ||:
+
+if [ -n "$mac0" -a -n "$mac1" -a -n "$serial" ]; then
+    printf "mac0=$mac0\nmac1=$mac1\nserial=$serial\n" |
+        dd of=/sys/bus/i2c/devices/0-103$a/slave-eeprom bs=256 count=1 2>/dev/null
+    if ! dd if=/sys/bus/i2c/devices/7-0056/eeprom bs=16k skip=1 2>/dev/null | strings | grep -q serial; then
+        printf "mac0=$mac0\nmac1=$mac1\nserial=$serial\n" |
+            dd of=/sys/bus/i2c/devices/7-0056/eeprom bs=16k seek=1 2>/dev/null
+    fi
+else
+    # Match excatly three entries
+    data="$(dd if=/sys/bus/i2c/devices/7-0056/eeprom bs=16k skip=1 2>/dev/null | strings | awk -vr=3 '/^mac[0-1]=/ || /^serial=/ { s=s $0 "\n"; r-- } END { if (r == 0) print s }')"
+    if [ -n "$data" ]; then
+        mkdir -p -m1777 /run/lock
+        printf "$data" |
+            dd of=/sys/bus/i2c/devices/0-103$a/slave-eeprom bs=256 count=1 2>/dev/null
+        printf "$data" |
+            sed 's,^mac0=,ethaddr ,; s,^mac1=,eth1addr ,; s,^serial=,serialnumber ,' |
+                /sbin/fw_setenv -s -
+        printf "$data" | sed -n 's,mac0=,,p' | xargs /sbin/ifconfig eth0 hw ether
+        printf "$data" | sed -n 's,mac1=,,p' | xargs /sbin/ifconfig eth1 hw ether
+    fi
+fi

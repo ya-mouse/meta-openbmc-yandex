@@ -1,0 +1,6 @@
+#!/bin/bash -e
+
+frag CB-iperf
+
+iperf_client
+test_code "Check iperf counters" iperf_check

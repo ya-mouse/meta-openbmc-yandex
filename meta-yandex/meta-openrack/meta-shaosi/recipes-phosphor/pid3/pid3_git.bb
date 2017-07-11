@@ -2,8 +2,12 @@ DESCRIPTION = "PID regulator"
 # TODO: put license
 LICENSE = "PD"
 LIC_FILES_CHKSUM = "file://main.cpp;beginline=1;endline=2;md5=ed0443b95075d48d7a632144acce0ac0"
+BB_STRICT_CHECKSUM = "0"
 
-SRC_URI = "git://github.yandex-team.ru/rudimiv/pid3.git"
+SRC_URI = "https://github.yandex-team.ru/rudimiv/pid3"
+#SRC_URI = "https://github.yandex-team.ru/kitsok/pid3.git"
+#SRC_URI[md5sum] = "f8c73f055c992950cec4454e3e8109c6"
+#SRC_URI[md5sum] = "54318499697b35249b217b386eb52281"
 # SRC_URI += "file://01-cmake-link.patch"
 # SRC_URI += "file://02-install.patch"
 # SRC_URI += "file://03-curl-disable-ssl.patch"
