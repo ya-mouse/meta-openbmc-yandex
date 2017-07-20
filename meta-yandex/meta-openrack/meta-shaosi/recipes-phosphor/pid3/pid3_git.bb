@@ -18,7 +18,8 @@ SRCREV = '${AUTOREV}'
 
 S = "${WORKDIR}/git"
 
-DEPENDS = "curlpp"
+DEPENDS = "curlpp bash "
+RDEPENDS_${PN} += "bash "
 
 inherit cmake
 
