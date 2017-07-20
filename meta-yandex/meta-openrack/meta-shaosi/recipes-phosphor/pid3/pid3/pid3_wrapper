@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Wrapper around P.I.D. fan control process
 # Waits for the system to be ready for PID, starts it
 # Every SleepTime seconds gets nodelist with types via API
