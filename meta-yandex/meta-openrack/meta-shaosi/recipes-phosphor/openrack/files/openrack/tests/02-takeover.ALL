@@ -1,0 +1,43 @@
+#!/bin/bash -e
+
+frag CB-sensors
+
+take_over()
+{
+	local n=$1
+	# Can't takeover ourselves
+	[ $BA != $n ] || return 128
+	# Fixup address
+	[ $n -lt 4 ] || n=$((n+1))
+
+	io_en $I2C_common $((0x20+n)) 0.0
+	# io_gpio $I2C_common $((0x20+n)) 0.0 0
+	i2c_mux $I2C_common $((0x70+n)) 6 || return
+	io_gpio $I2C_common $((0x20+n)) 0.0 0
+	i2c_scan $I2C_common
+}
+
+take_it_back()
+{
+	local n=$1
+	# Can't takeover ourselves
+	[ $BA != $n ] || return 128
+	# Fixup address
+	[ $n -lt 4 ] || n=$((n+1))
+
+	i2c_demux $I2C_common $((0x70+n))
+	io_gpio $I2C_common $((0x20+n)) 0.0 1
+	io_del $I2C_common $((0x20+n))
+}
+
+exp="$(cat $WD/$DATA/01-exp_03)"
+
+bus=$I2C_common
+[ "$BT" = RMC ] || bus=$I2C_sensors
+for n in $(board_list); do
+	test_compare_output "Take over CB-$n" "$exp" take_over $n
+	test_cb_sensors $bus
+	test_code "Pay it back" take_it_back $n
+done
+
+led_on $LED_OK

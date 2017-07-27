@@ -1,0 +1,93 @@
+#!/bin/bash -e
+
+. /usr/share/openrack/functions
+
+BA=$(board_addr -f)
+BT=$(board_type)
+WD=$(readlink -f ${0%/*})
+CFG=/etc/default/openrack
+DATA=data
+
+usage()
+{
+	[ -z "$1" ] || printf "%s\n\n" "$1"
+	cat <<EOF
+Usage: openrack-test [options]
+
+Options:
+  -T TYPE	Override board type (default: $BT)
+  -A ADDR	Override board address (default: $BA)
+  -d SET	Use dataset (default: $DATA)
+  -w DIR	Work-directory (default: $WD)
+  -c CONFIG	Use config (default: $CFG)
+
+EOF
+	[ -z "$1" ]
+}
+
+TEMP=`getopt -o T:A:d:w:c: -n openrack-test -- "$@" || usage 1>&2` 
+
+eval set -- "$TEMP"
+while :; do
+	case "$1" in
+	-T) shift; BT=$1
+		;;
+	-A) shift; BA=$1
+		;;
+	-d) shift
+		DATA=$1
+		;;
+	-w) shift
+		WD=$1
+		;;
+	-c) shift
+		CFG=$1
+		;;
+	--) shift
+		break
+	esac
+	shift
+done
+
+[ -e "$CFG" ] || usage "Config $1 not exists" 1>&2
+[ -d "$WD" ] || usage "Path $1 is not directory" 1>&2
+[ -e "$WD/$DATA" ] || usage "Dataset $1 not exists" 1>&2
+
+export BT BA WD DATA
+
+source $CFG
+
+test_init
+
+cleanup()
+{
+	# Remove slaves in reverse order
+	ls -d /sys/bus/i2c/devices/[0-9]*-[01]0* 2>/dev/null | sort -n -r | while read d; do
+		[ -e "$d" ] || continue
+		d=${d##*/}
+		bus=${d%%-*}
+		slave=0x${d##*-}
+		i2c_del $bus $slave 2>/dev/null ||:
+	done
+
+	# Demux all switches (skip unused 0x74 slave addr)
+        for i in `seq 0x70 0x77`; do
+		[ $i = 116 ] || i2c_demux $I2C_common $i 2>/dev/null ||:
+        done
+
+	# Remove bridge for VLAN tests
+	if [ -n "$IPERF_RUN_VLAN" ]; then
+		brctl delbr br0 ||:
+		for vid in `seq 101 107`; do
+			ifconfig eth1.$vid down ||:
+			vconfig rem eth1.$vid ||:
+		done
+	fi
+}
+test_code "Cleanup" cleanup
+
+for test in $(ls $WD/[0-9]*-*{.ALL,.$BT,.$BT-$BA} 2>&1 | sort -n); do
+	[ -f "$test" ] || continue
+	log "Running ${test##*/}...\n"
+	source "$test"
+done

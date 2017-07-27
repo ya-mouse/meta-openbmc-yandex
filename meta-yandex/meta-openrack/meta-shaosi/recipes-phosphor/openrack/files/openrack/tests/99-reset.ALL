@@ -1,0 +1,13 @@
+#!/bin/bash -e
+
+# save_state
+sync; sync; sync
+
+# Clear factory-test-mode
+fw_setenv factory-test-mode
+test_code "Disable factory-teset mode in u-Boot" flashcp -v /run/fw_env /dev/mtd2
+
+log "<< Press HW_RST button again to reset the board >>\n\n"
+sync; sync; sync
+
+led_on $LED_OK

@@ -1,0 +1,51 @@
+# Range for tmp75 on CB and RMC
+TEMP_LO=13
+TEMP_HI=40
+
+# Voltage ranges
+V33_LO=3.0
+V33_HI=3.4
+V12_LO=11.40
+V12_HI=12.5
+
+# Range for FANs
+# ..0%
+FAN0_LO=0
+FAN0_HI=7000
+# ..50%
+FAN50_LO=0
+FAN50_HI=7000
+# ..100%
+FAN100_LO=0
+FAN100_HI=7000
+
+# SW/HW reset button timeout
+BTN_MAX_RETRY=60
+
+# Control Board I2C port change timeout
+CB_PORT_CHECK=2
+CB_PORT_RETRY=60
+
+# iperf settings
+# ...runtime (for one port)
+IPERF_RUN_TIME=5
+# ...host to connect to
+IPERF_HOST_IP=10.1.0.1
+# ...or run over all VLANs port (set to non-empty to force run)
+IPERF_RUN_VLAN=1
+
+CB_config()
+{
+	I2C_common=0
+	I2C_sensors=7
+
+	export I2C_common I2C_sensors
+}
+
+RMC_config()
+{
+	I2C_common=0
+	I2C_sensors=7
+
+	export I2C_common I2C_sensors
+}

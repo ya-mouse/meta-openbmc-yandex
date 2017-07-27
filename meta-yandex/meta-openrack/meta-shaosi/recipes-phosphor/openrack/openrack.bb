@@ -13,8 +13,10 @@ SRC_URI += "file://master-pmbus.dtbo"
 SRC_URI += "file://b53tool.lua"
 SRC_URI += "file://miitool.lua"
 SRC_URI += "file://setup-CB"
-SRC_URI += "file://openrack.tar.gz"
-SRC_URI += "file://lua.tar.gz"
+#SRC_URI += "file://openrack.tar.gz"
+SRC_URI += "file://openrack"
+#SRC_URI += "file://lua.tar.gz"
+SRC_URI += "file://lua"
 
 do_install() {
         install -d ${D}/etc/overlays ${D}/usr/sbin ${D}/usr/share/lua/5.1 ${D}/usr/share/openrack/tests
