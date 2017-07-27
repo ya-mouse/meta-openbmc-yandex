@@ -1,0 +1,34 @@
+#!/bin/bash -e
+
+run_iperf()
+{
+    local rc=0
+    iperf $@ 2>>/tmp/log.err 1>>/tmp/log || rc=$?
+    [ "$rc" -ne 0 ] || ! fgrep -q 'connect failed:' /tmp/log.err || rc=$?
+    return $rc
+}
+
+iperf_client()
+{
+	# Just check first and last vlan interface presence
+	if [ -n "$IPERF_RUN_VLAN" ]; then
+		test_code "Preparing VLANs" /usr/share/openrack/setup-vlan-CB
+		for vid in `seq 101 107`; do
+			test_code "Run iperf on LAN$((vid-100)) port" run_iperf -t $IPERF_RUN_TIME -c 10.1.$vid.1
+		done
+	else
+		# Run over switch port
+		test_code "Run iperf on Switch port" iperf -t $IPERF_RUN_TIME -c $IPERF_HOST_IP -r
+		for i in `seq 6`; do
+			log "\n====== Change LAN port to $i and hit <Enter> ======\n"
+			read
+			test_code "Run iperf on LAN$i" run_iperf -t $IPERF_RUN_TIME -c $IPERF_HOST_IP -r
+		done
+	fi
+}
+
+iperf_check()
+{
+	# wait $(cat /tmp/iperf-client.pid 2>/dev/null || echo -1) ||:
+	echo "TODO: check perf counts with ethtool -S"
+}
