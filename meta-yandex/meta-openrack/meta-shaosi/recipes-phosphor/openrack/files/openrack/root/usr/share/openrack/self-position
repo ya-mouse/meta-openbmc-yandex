@@ -56,6 +56,8 @@ if [ "$old_name" != "$name" ]; then
     echo "$name" > /etc/openrack-board
 fi
 
+hostname CB-${pos}
+
 dtoverlay shaosi-$t
 
 # Exit if factory-test-mode is set
