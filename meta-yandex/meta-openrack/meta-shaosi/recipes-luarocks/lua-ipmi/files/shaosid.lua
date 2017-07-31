@@ -151,8 +151,12 @@ local O_ipmi_cmds = {
             end
             return true
         end, 0x38, 0x30, 0x02 },
+        { function(self, response)
+            if #response < 5 then return false end
+            v6len = tonumber(response:byte(8+3))
+            db_resty:request(self.n, 'ipv6', string.sub(response, 8+4, 8+4+v6len-1))
+        end, 0x2e, 0x21, { 0x0a, 0x3c, 0, 4, 2 } },
     },
-
 }
 
 L_ipmi_cmds = {
