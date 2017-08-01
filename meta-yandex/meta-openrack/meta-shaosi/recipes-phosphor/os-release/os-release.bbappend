@@ -1,5 +1,5 @@
 do_compile_remove[vardeps] = "BUILD_ID VERSION VERSION_ID"
-PR[vardepsxeclude]="DATETIME"
+do_compile[vardepsxeclude] = "DATETIME BUILD_ID VERSION VERSION_ID NAME PRETTY_NAME"
 
 python() {
         import os
