@@ -37,7 +37,7 @@ read -p "Press ENTER to write data or CTRL-C to terminate script " rc
 
 echo "Please wait, don't terminate the script"
 # write data to eeprom
-printf "mac0=$mac0\nmac1=$mac1\nserial=$serial\n" | dd of=/sys/bus/i2c/devices/7-0056/eeprom bs=16k seek=1
+printf "mac0=$mac0\nmac1=$mac1\nserial=$serial_eep\n" | dd of=/sys/bus/i2c/devices/7-0056/eeprom bs=16k seek=1
 fw_setenv ethaddr ${mac0}
 fw_setenv eth1addr ${mac1}
 
