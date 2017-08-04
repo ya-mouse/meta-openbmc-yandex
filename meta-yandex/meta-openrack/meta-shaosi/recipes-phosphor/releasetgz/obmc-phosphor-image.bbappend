@@ -15,6 +15,7 @@ do_generate_flash_append() {
     pushd .
     cd ${LAYER_DIR}
     ver_yandex=$(git describe --tags || return 0)
+    git log --date=local --pretty=format:%cd--%h--%s > ${ddir}/CHANGELOG
     popd
 
     dtb="zImage-${KERNEL_DEVICETREE}"
@@ -43,6 +44,6 @@ do_generate_flash_append() {
 
     tar_fname="openbmc-0.1.0-${ver_yandex}-app_n_kernel.tar"
     rm -rf ${ddir}/${tar_fname}* > /dev/null 2>&1 || return 0
-    tar -h -cvf ${ddir}/${tar_fname} -C ${ddir} image-kernel image-initramfs image-rofs
+    tar -h -cvf ${ddir}/${tar_fname} -C ${ddir} image-kernel image-initramfs image-rofs CHANGELOG
     gzip ${ddir}/${tar_fname}
 }
