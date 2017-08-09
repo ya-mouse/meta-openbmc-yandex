@@ -68,6 +68,13 @@ while [ 1 ]; do
   continue
  fi
 
+ # Check if PID is alive 
+ if [ ! -d "/proc/${PIDPID}" ]; then
+  ${PIDCMD} ${ARGS} &
+  PIDPID=$!
+  continue
+ fi
+
  # Compare arrays
  Changed=0
  for node in {1..6}; do 
