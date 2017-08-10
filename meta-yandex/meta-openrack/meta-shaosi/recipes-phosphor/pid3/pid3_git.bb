@@ -3,9 +3,10 @@ DESCRIPTION = "PID regulator"
 LICENSE = "PD"
 LIC_FILES_CHKSUM = "file://main.cpp;beginline=1;endline=2;md5=ed0443b95075d48d7a632144acce0ac0"
 BB_STRICT_CHECKSUM = "0"
+#SRC_URI[md5sum] = "57564690badd295d9b13f5b5948cc3a9"
 
 #SRC_URI = "https://github.yandex-team.ru/rudimiv/pid3"
-SRC_URI = "https://github.yandex-team.ru/kitsok/pid3.git"
+SRC_URI = "git://github.yandex-team.ru/kitsok/pid3.git;branch=RND-549"
 #SRC_URI[md5sum] = "f8c73f055c992950cec4454e3e8109c6"
 #SRC_URI[md5sum] = "54318499697b35249b217b386eb52281"
 # SRC_URI += "file://01-cmake-link.patch"
@@ -18,6 +19,7 @@ SRC_URI += "file://node.conf"
 SRC_URI += "file://nvme.conf"
 #SRCREV = '1ab1c286b1f157bc98c6530e3aa030884f50d542'
 SRCREV = '${AUTOREV}'
+#SRCREV = '299d442a6ec393c47f8bcee0be347af193e2855d'
 
 S = "${WORKDIR}/git"
 
