@@ -7,19 +7,18 @@ Warning: use with caution if running over ssh as you can drop the connection!
 _EOF
 
 # Get addresses and serial
-mac0_if=$(ifconfig eth0 2>&1| grep eth0 | awk '{print $5}')
-mac1_if=$(ifconfig eth1 2>&1| grep eth1 | awk '{print $5}')
+mac0_if=$(ifconfig eth0 2>&1| grep eth0 | awk '{print $5}' | tr '[:lower:]' '[:upper:]')
+mac1_if=$(ifconfig eth1 2>&1| grep eth1 | awk '{print $5}' | tr '[:lower:]' '[:upper:]')
 
 eeprom=$(cat /sys/class/i2c-dev/i2c-7/device/7-0056/eeprom | strings)
-mac0_eep=$(echo ${eeprom} | sed 's/.*mac0=\([^ ]*\).*/\1/')
-mac1_eep=$(echo ${eeprom} | sed 's/.*mac1=\([^ ]*\).*/\1/')
-serial_eep=$(echo ${eeprom} | sed 's/.*serial=\([^ ]*\).*/\1/')
+mac0_eep=$(echo ${eeprom} | sed 's/.*mac0=\([^ ]*\).*/\1/' | tr '[:lower:]' '[:upper:]')
+mac1_eep=$(echo ${eeprom} | sed 's/.*mac1=\([^ ]*\).*/\1/' | tr '[:lower:]' '[:upper:]')
+serial_eep=$(echo ${eeprom} | sed 's/.*serial=\([^ ]*\).*/\1/' | tr '[:lower:]' '[:upper:]')
 
 env=$(fw_printenv)
 
-mac0_env=$(echo ${env} | sed 's/.*ethaddr=\([^ ]*\).*/\1/')
-mac1_env=$(echo ${env} | sed 's/.*eth1addr=\([^ ]*\).*/\1/')
-
+mac0_env=$(echo ${env} | sed 's/.*ethaddr=\([^ ]*\).*/\1/' | tr '[:lower:]' '[:upper:]')
+mac1_env=$(echo ${env} | sed 's/.*eth1addr=\([^ ]*\).*/\1/' | tr '[:lower:]' '[:upper:]')
 
 echo "Current MACs & serial:"
 echo "U-Boot Environment: MAC0=${mac0_env} MAC1=${mac1_env}"
