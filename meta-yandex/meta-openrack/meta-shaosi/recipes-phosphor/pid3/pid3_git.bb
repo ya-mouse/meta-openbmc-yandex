@@ -14,6 +14,7 @@ SRC_URI = "git://github.yandex-team.ru/kitsok/pid3.git;branch=RND-549"
 # SRC_URI += "file://03-curl-disable-ssl.patch"
 SRC_URI += "file://obmc-pid3.service"
 SRC_URI += "file://pid3_wrapper"
+SRC_URI += "file://safefans.sh"
 SRC_URI += "file://jbod.conf"
 SRC_URI += "file://node.conf"
 SRC_URI += "file://nvme.conf"
@@ -36,6 +37,7 @@ do_install_append () {
     install -d ${D}${systemd_unitdir}/system
     install -m 0644 ${WORKDIR}/obmc-pid3.service ${D}${systemd_unitdir}/system/obmc-pid3.service
     install -m 0755 ${WORKDIR}/pid3_wrapper ${D}${sbindir}/pid3_wrapper
+    install -m 0755 ${WORKDIR}/safefans.sh ${D}${sbindir}/safefans.sh
     for c in jbod node nvme; do
         install -m 0644 ${WORKDIR}/${c}.conf ${D}${sysconfdir}/pid3/${c}.conf
     done
@@ -61,6 +63,7 @@ CONFFILES_${PN} += "${sysconfdir}/pid3/*.conf"
 
 FILES_${PN} = "${sbindir}/pid3 \
                ${sbindir}/pid3_wrapper \
+               ${sbindir}/safefans.sh \
                ${sysconfdir}/systemd/system/obmc-pid3.service.d \
                ${sysconfdir}/pid3/*.conf \
                ${systemd_unitdir}/system/obmc-pid3.service \

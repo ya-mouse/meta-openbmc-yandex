@@ -29,6 +29,8 @@ Nl_cur=(-1 -1 -1 -1 -1 -1)
 Nl_prev=(-1 -1 -1 -1 -1 -1)
 FirstRun=1
 
+RestartDelay=30
+
 # Wait for our CB to be the pilot flying
 while [ ! -e /run/phoshpor-gevent.socket ] ; do
     sleep 5
@@ -37,7 +39,16 @@ done
 # Catch signals
 trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
 
-# Start PID and get its' PID (ha-ha)
+# HACK Wait for the CB to be old enough
+uptime=$(cat /proc/uptime  | awk -F "." '{print $1}')
+if [ $uptime -le 90 ]; then
+   sleep 5
+   echo "To early to start, suiciding"
+   systemctl restart obmc-shaosid
+fi
+
+# Start PID and get its' PID 
+sleep ${RestartDelay}
 ${PIDCMD} ${ARGS} & 
 PIDPID=$!
 
@@ -70,6 +81,7 @@ while [ 1 ]; do
 
  # Check if PID is alive 
  if [ ! -d "/proc/${PIDPID}" ]; then
+  sleep ${RestartDelay}
   ${PIDCMD} ${ARGS} &
   PIDPID=$!
   continue
@@ -87,8 +99,7 @@ while [ 1 ]; do
   # Do PID restart
   ${RESTART_CMD} ${PIDPID} > /dev/null 2>&1
 
-  sleep 5
-
+  sleep ${RestartDelay}
   ${PIDCMD} ${ARGS} & 
   PIDPID=$!
  fi
