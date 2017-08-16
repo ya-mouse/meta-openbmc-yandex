@@ -56,7 +56,7 @@ if [ "$old_name" != "$name" ]; then
     echo "$name" > /etc/openrack-board
 fi
 
-hostname CB-${pos}
+hostname "$name"
 
 dtoverlay shaosi-$t
 
