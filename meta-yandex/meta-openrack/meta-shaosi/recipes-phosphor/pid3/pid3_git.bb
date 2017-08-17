@@ -6,7 +6,7 @@ BB_STRICT_CHECKSUM = "0"
 #SRC_URI[md5sum] = "57564690badd295d9b13f5b5948cc3a9"
 
 #SRC_URI = "https://github.yandex-team.ru/rudimiv/pid3"
-SRC_URI = "git://github.yandex-team.ru/kitsok/pid3.git;branch=RND-549"
+SRC_URI = "git://github.yandex-team.ru/kitsok/pid3.git;branch=V8.12"
 #SRC_URI[md5sum] = "f8c73f055c992950cec4454e3e8109c6"
 #SRC_URI[md5sum] = "54318499697b35249b217b386eb52281"
 # SRC_URI += "file://01-cmake-link.patch"
