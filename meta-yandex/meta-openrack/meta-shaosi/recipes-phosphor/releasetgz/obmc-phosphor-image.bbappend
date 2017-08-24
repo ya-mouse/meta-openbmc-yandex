@@ -42,8 +42,12 @@ do_generate_flash_append() {
     ln -sf ${kernel} ${ddir}/image-ukernel
     ln -sf ${dtbkernel} ${ddir}/image-kernel
 
-    tar_fname="openbmc-0.1.0-${ver_yandex}-app_n_kernel.tar"
-    rm -rf ${ddir}/${tar_fname}* > /dev/null 2>&1 || return 0
-    tar -h -cvf ${ddir}/${tar_fname} -C ${ddir} image-kernel image-initramfs image-rofs CHANGELOG
-    gzip ${ddir}/${tar_fname}
+    tar_appkern="openbmc-0.1.0-${ver_yandex}-app_n_kernel.tar"
+    tar_full="openbmc-0.1.0-${ver_yandex}-fullinst.tar"
+    rm -rf ${ddir}/${tar_appkern}* > /dev/null 2>&1 || return 0
+    rm -rf ${ddir}/${tar_full}* > /dev/null 2>&1 || return 0
+    tar -h -cvf ${ddir}/${tar_appkern} -C ${ddir} image-kernel image-initramfs image-rofs CHANGELOG
+    tar -h -cvf ${ddir}/${tar_full} -C ${ddir} image-kernel image-initramfs image-rofs image-rwfs image-u-boot CHANGELOG
+    gzip ${ddir}/${tar_appkern}
+    gzip ${ddir}/${tar_full}
 }

@@ -112,6 +112,9 @@ local L_ipmi_sdrs = {
   {'SATA[0-9]+_STAT', 2, 60.0},
   {'P0N[01]_STAT', 2, 60.0},
   {'SATA[0-9]+_P1N[01]_STAT', 2, 60.0},
+  {'Inlet_Temp', 2, 60.0 },
+  {'EXP_Board_TEMP', 2, 60.0},
+
 }
 
 local rounds = 0
@@ -146,7 +149,7 @@ local O_ipmi_cmds = {
                     L_ipmi_add(self.n, response:byte(8+4 + 6*i, 8+4 + 6*(i+1) - 1))
                     n = 'mac/ipmi'
                 end
-                print(self.n, i, mac)
+                -- print(self.n, i, mac)
                 if mac ~= '00:00:00:00:00:00' then db_resty:request(self.n, n, mac) end
             end
             return true
@@ -169,11 +172,26 @@ L_ipmi_cmds = {
         end, 0x6, 0x3d },
     },
 
+   [1] = {
+	 -- Get power state every cycle
+       { function(self, response)
+                if #response < 12 then return false end
+                local rc = string.sub(response, 8, 8+3)
+                local pwrstate = band(response:byte(8),0x01)
+                -- local str = ''
+                -- for b=1,#rc do
+                --        str = str..string.format('%02X ',string.byte(rc, b))
+                -- end
+                -- print('DEBUG: Resp:'..str..' State:'..pwrstate)
+                db_resty:request(self.n, 'PWRSTATE', pwrstate)
+          end, 0x00, 0x01 },
+    },
+
     [10] = {
         { function(self, response)
             if #response == 7 then return true end
             local rackid = string.gsub(response:sub(8+5, 8+14), '[^a-zA-Z0-9_.-]', '')
-            if not self._debug then print('rackid', rackid) end
+            if self._debug then print('rackid', rackid) end
             db_resty:request(self.n, 'type', response:byte(8+3))
             db_resty:request(self.n, 'rackid', rackid)
             db_resty:request(self.n, 'slotid', response:byte(8+15))
@@ -297,6 +315,8 @@ function O_ipmi_del(devnum)
     end
     local i
     db_resty:request(devnum, 'ipv4', nil, 'DELETE')
+    db_resty:request(devnum, 'ipv6', nil, 'DELETE')
+    db_resty:request(devnum, 'PWRSTATE', nil, 'DELETE')
     db_resty:request(devnum, 'mac/ipmi', nil, 'DELETE')
     for i=1,3 do
         db_resty:request(devnum, string.format('mac/eth%d', i), nil, 'DELETE')
@@ -326,7 +346,7 @@ end
 function resty_event(ufd, events)
     local d, errno, errmsg = ufd:read(4096)
     if d == '' or d == nil then
-        -- print('RECONNECT', events)
+        print('RECONNECT', events)
         db_resty:close()
         db_resty = nixio.socket('unix', 'stream')
         db_resty:connect('/run/openresty/socket')
@@ -426,7 +446,7 @@ sdr_timer = uloop.timer(function()
     end
 
     -- Process sensors
-    -- print('========')
+--     print('========')
 --     for k,v in pairs(hwmon._s) do
 --         print(v.label, v:value())
 --     end
