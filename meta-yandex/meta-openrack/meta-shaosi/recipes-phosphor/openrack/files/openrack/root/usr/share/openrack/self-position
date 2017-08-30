@@ -35,16 +35,11 @@ t=$(board_type)${factory_test:+-factory}
 # Check for old board type & name
 old_name="$(cat /etc/openrack-board 2>/dev/null ||:)"
 
-if [ "$t" = CB ]; then
-    if [ "$old_name" != "$name" -o ! -f /etc/systemd/system/obmc-pid3.service.d/board.conf ]; then
-        cat<<EOF>/etc/systemd/system/obmc-pid3.service.d/board.conf
-[Service]
-Environment="CB_N=${pos}"
-EOF
-        systemctl daemon-reload
-    fi
-else
+if [ "$t" = "RMC" ]; then
     systemctl disable obmc-pid3.service
+    systemctl daemon-reload
+else
+    systemctl enable obmc-pid3.service
     systemctl daemon-reload
 fi
 

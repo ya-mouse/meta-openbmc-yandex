@@ -33,7 +33,6 @@ do_install_append () {
     mv ${D}${sbindir}/pid ${D}${sbindir}/pid3
 
     install -d ${D}${sysconfdir}/pid3
-    install -d ${D}${sysconfdir}/systemd/system/obmc-pid3.service.d
     install -d ${D}${systemd_unitdir}/system
     install -m 0644 ${WORKDIR}/obmc-pid3.service ${D}${systemd_unitdir}/system/obmc-pid3.service
     install -m 0755 ${WORKDIR}/pid3_wrapper ${D}${sbindir}/pid3_wrapper

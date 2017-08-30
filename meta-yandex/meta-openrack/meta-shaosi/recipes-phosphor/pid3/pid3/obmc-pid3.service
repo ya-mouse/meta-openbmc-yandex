@@ -5,7 +5,7 @@ Requires=obmc-shaosid.service obmc-fans-ready.target
 Type=simple
 Restart=always
 RestartSec=0
-ExecStart=/usr/sbin/pid3_wrapper --address 127.0.0.1 --level ERROR -c "${CB_N}" -u 1 2 3 4 5 6 -f 1 2 3 4 5 6 7 8 --node /etc/pid3/node.conf --nvme /etc/pid3/nvme.conf --jbod /etc/pid3/jbod.conf
+ExecStart=/usr/sbin/pid3_wrapper
 ExecStopPost=/usr/sbin/safefans.sh || return 0
 [Install]
 WantedBy=network.target

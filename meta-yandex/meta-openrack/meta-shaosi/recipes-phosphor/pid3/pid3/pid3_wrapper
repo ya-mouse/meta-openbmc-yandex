@@ -6,9 +6,13 @@
 # If the wrapper is killed - kill the PID either
 # 
 
+# Get args from files
+CB=$(cat /etc/openrack-board | tr -s "-" " " | awk '{print $2}')
 
-# Save arguments
-ARGS=$@
+if [ -z "$CB" ]; then
+ CB=1
+fi
+ARGS=$(sed 's/CBCBCB/'"${CB}"'/g' /etc/pid3/cmdline.conf)
 
 # Cycle duration
 SleepTime=5
