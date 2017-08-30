@@ -31,6 +31,9 @@ FirstRun=1
 
 RestartDelay=30
 
+# Set fans to failsafe mode
+/usr/sbin/safefans.sh
+
 # Wait for our CB to be the pilot flying
 while [ ! -e /run/phoshpor-gevent.socket ] ; do
     sleep 5
@@ -40,12 +43,12 @@ done
 trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
 
 # HACK Wait for the CB to be old enough
-uptime=$(cat /proc/uptime  | awk -F "." '{print $1}')
-if [ $uptime -le 90 ]; then
-   sleep 5
-   echo "To early to start, suiciding"
-   systemctl restart obmc-shaosid
-fi
+#uptime=$(cat /proc/uptime  | awk -F "." '{print $1}')
+#if [ $uptime -le 90 ]; then
+#   sleep 5
+#   echo "To early to start, suiciding"
+#   systemctl restart obmc-shaosid
+#fi
 
 # Start PID and get its' PID 
 sleep ${RestartDelay}
