@@ -7,16 +7,14 @@
 
 [Unit]
 Description=OpenBMC nodes monitor
-DefaultDependencies=no
 Conflicts=shutdown.target
-After=obmc-overlay.service
-Before=sysinit.target
-
+After=openresty.service systemd-networkd.service obmc-overlay.service
+Requires=openresty.service
 [Service]
 ExecStart=/usr/sbin/shaosid
 Type=simple
 Restart=always
-RestartSec=0
+RestartSec=5
 
 [Install]
 WantedBy=local-fs.target

@@ -58,6 +58,12 @@ fi
 
 hostname "$name"
 
+loaded=$(dtoverlay -l | grep -v "in load order" | grep -v "No overlays loaded" | awk '{print $2}')
+if [ ! -z ${loaded} ]; then
+  echo "Already loaded overlay, exiting"
+  exit 0
+fi
+
 dtoverlay shaosi-$t
 
 # Exit if factory-test-mode is set
@@ -100,7 +106,7 @@ else
         mkdir -p -m1777 /run/lock
         printf "$data" |
             dd of=/sys/bus/i2c/devices/0-103$a/slave-eeprom bs=256 count=1 2>/dev/null
-        printf "$data" |
+        printf "$data\n" |
             sed 's,^mac0=,ethaddr ,; s,^mac1=,eth1addr ,; s,^serial=,serialnumber ,' |
                 /sbin/fw_setenv -s -
         printf "$data" | sed -n 's,mac0=,,p' | xargs /sbin/ifconfig eth0 hw ether
