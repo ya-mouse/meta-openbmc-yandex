@@ -76,13 +76,7 @@ fi
 [ -z "$factory_test" ] || exit 0
 
 # Set default values for FANs
-w83795g_pwm=$(cat /etc/default/obmc/w83795g-pwm 2>/dev/null || echo 140)
-fgrep w83795g /sys/class/hwmon/hwmon*/uevent -l | while read hwmon; do
-    for pwm in ${hwmon%%/uevent}/device/pwm[1-8]; do
-        [ -f "$pwm" ] || continue
-        echo $w83795g_pwm > $pwm
-    done
-done
+/usr/sbin/safefans.sh
 
 [ $t = CB ] || a=$(printf "%x" $((9 + a*2)))
 echo slave-24c02 0x103$a > /sys/bus/i2c/devices/i2c-0/new_device ||:
