@@ -41,32 +41,31 @@ fw_setenv ethaddr ${mac0}
 fw_setenv eth1addr ${mac1}
 
 echo "Data is written"
-echo "printenv:"
-fw_printenv
-echo "U-Boot envinroment:"
-cat /sys/class/i2c-dev/i2c-7/device/7-0056/eeprom | strings
-echo
 
-read -p "Going to set MAC address on eth0. Press ENTER to continue or CTRL-C to terminate script"
+# Check tty
+tty | grep "ttyS" > /dev/null 2>&1
+if [ ! "$?" -eq "0" ]; then
+ echo "Not on local console, not setting MACs on eth0/eth1"
+ echo "Changes will apply after reboot"
+ echo "Exiting"
+ exit
+fi
+
+echo "WARNING: NETWORK CONNECTIONS WILL BE LOST!!!"
+echo "PRESS CTRL-C TO TERMINATE SCRIPT IF NOT SURE!!!"
+read -p "Going to set MAC address on eth0 and eth1. Press ENTER to continue or CTRL-C to terminate script"
+read -r -p "Are you sure to proceed? [Yes/N] " response
+if [ "$response" != "Yes" ]; then
+ echo "Terminating script"
+ exit
+fi
+
 ifconfig eth0 down
 ifconfig eth0 hw ether ${mac0}
 ifconfig eth0 up
-echo "eth0 MAC set. Here is ifconfig:"
-ifconfig eth0
-
-echo "Going to set MAC address on eth1"
-echo "WARNING: NETWORK CONNECTION WILL BE LOST!!!"
-read -p "Press ENTER to continue or CTRL-C to terminate script"
 ifconfig eth1 down
 ifconfig eth1 hw ether ${mac1}
 ifconfig eth1 up
-echo "eth1 MAC set. Here is ifconfig:"
-ifconfig eth1
 
-echo "All is done"
-
-sync
-sync
-sync
-
+echo "All is done. Please reboot"
 
