@@ -35,6 +35,13 @@ t=$(board_type)${factory_test:+-factory}
 # Check for old board type & name
 old_name="$(cat /etc/openrack-board 2>/dev/null ||:)"
 
+# Disable avahi
+systemctl disable avahi-daemon.service
+systemctl disable avahi-daemon.socket
+systemctl stop avahi-daemon.service
+systemctl stop avahi-daemon.socket
+
+# Start PID on CB
 if [ "$t" = "RMC" ]; then
     systemctl disable obmc-pid3.service
     systemctl daemon-reload
