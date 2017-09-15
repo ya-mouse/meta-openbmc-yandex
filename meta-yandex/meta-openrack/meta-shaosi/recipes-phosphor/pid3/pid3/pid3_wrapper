@@ -12,7 +12,7 @@ CB=$(cat /etc/openrack-board | tr -s "-" " " | awk '{print $2}')
 if [ -z "$CB" ]; then
  CB=1
 fi
-ARGS=$(sed 's/CBCBCB/'"${CB}"'/g' /etc/pid3/cmdline.conf)
+ARGS="-n ${CB}"
 
 # Cycle duration
 SleepTime=5
