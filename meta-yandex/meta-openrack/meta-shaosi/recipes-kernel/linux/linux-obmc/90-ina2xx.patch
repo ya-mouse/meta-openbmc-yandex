@@ -1,0 +1,357 @@
+diff --git a/drivers/hwmon/ina2xx.c b/drivers/hwmon/ina2xx.c
+index b24f1d3..f504202f 100644
+--- a/drivers/hwmon/ina2xx.c
++++ b/drivers/hwmon/ina2xx.c
+@@ -64,6 +64,61 @@
+ #define INA219_CONFIG_DEFAULT		0x399F	/* PGA=8 */
+ #define INA226_CONFIG_DEFAULT		0x4527	/* averages=16 */
+ 
++/* INA219 config register bits */
++#define INA219_CONFIG_RST		( 1 << 15 )
++#define INA219_CONFIG_RST_MASK		( 1 << 15 )
++
++/* Bus voltage range */
++#define INA219_CONFIG_BRNG_16V		( 0 << 13 )
++#define INA219_CONFIG_BRNG_32V		( 1 << 13 )
++#define INA219_CONFIG_BRNG_MASK		( 1 << 13 )
++
++/* Shunt voltage ADC preamp divider */
++#define INA219_CONFIG_PGA_1		( 0 << 11 )
++#define INA219_CONFIG_PGA_2		( 1 << 11 )
++#define INA219_CONFIG_PGA_4		( 2 << 11 )
++#define INA219_CONFIG_PGA_8		( 3 << 11 )
++#define INA219_CONFIG_PGA_MASK		( 3 << 11 )
++
++/* Bus ADC resolution and averaging */
++#define INA219_CONFIG_BADC_9B_1S	( 0 << 7 )
++#define INA219_CONFIG_BADC_10B_1S	( 1 << 7 )
++#define INA219_CONFIG_BADC_11B_1S	( 2 << 7 )
++#define INA219_CONFIG_BADC_12B_1S	( 3 << 7 )
++#define INA219_CONFIG_BADC_12B_2S	( 9 << 7 )
++#define INA219_CONFIG_BADC_12B_4S	( 10 << 7 )
++#define INA219_CONFIG_BADC_12B_8S	( 11 << 7 )
++#define INA219_CONFIG_BADC_12B_16S	( 12 << 7 )
++#define INA219_CONFIG_BADC_12B_32S	( 13 << 7 )
++#define INA219_CONFIG_BADC_12B_64S	( 14 << 7 )
++#define INA219_CONFIG_BADC_12B_128S	( 15 << 7 )
++#define INA219_CONFIG_BADC_MASK		( 15 << 7 )
++
++/* Shunt ADC resolution and averaging */
++#define INA219_CONFIG_SADC_9B_1S	( 0 << 3 )
++#define INA219_CONFIG_SADC_10B_1S	( 1 << 3 )
++#define INA219_CONFIG_SADC_11B_1S	( 2 << 3 )
++#define INA219_CONFIG_SADC_12B_1S	( 3 << 3 )
++#define INA219_CONFIG_SADC_12B_2S	( 9 << 3 )
++#define INA219_CONFIG_SADC_12B_4S	( 10 << 3 )
++#define INA219_CONFIG_SADC_12B_8S	( 11 << 3 )
++#define INA219_CONFIG_SADC_12B_16S	( 12 << 3 )
++#define INA219_CONFIG_SADC_12B_32S	( 13 << 3 )
++#define INA219_CONFIG_SADC_12B_64S	( 14 << 3 )
++#define INA219_CONFIG_SADC_12B_128S	( 15 << 3 )
++#define INA219_CONFIG_SADC_MASK		( 15 << 3 )
++
++/* Modes of operation */
++#define INA219_CONFIG_MODE_PWRDWN	( 0 << 0 )
++#define INA219_CONFIG_MODE_SHUNT_TRG	( 1 << 0 )
++#define INA219_CONFIG_MODE_BUS_TRG	( 2 << 0 )
++#define INA219_CONFIG_MODE_ALL_TRG	( 3 << 0 )
++#define INA219_CONFIG_MODE_ADC_OFF	( 4 << 0 )
++#define INA219_CONFIG_MODE_SHUNT_CONT	( 5 << 0 )
++#define INA219_CONFIG_MODE_BUS_CONT	( 6 << 0 )
++#define INA219_CONFIG_MODE_ALL_CONT	( 7 << 0 )
++#define INA219_CONFIG_MODE_MASK		( 7 << 0 )
++
+ /* worst case is 68.10 ms (~14.6Hz, ina219) */
+ #define INA2XX_CONVERSION_RATE		15
+ #define INA2XX_MAX_DELAY		69 /* worst case delay in ms */
+@@ -97,6 +152,7 @@ struct ina2xx_config {
+ 	int calibration_factor;
+ 	int registers;
+ 	int shunt_div;
++	u16 shunt_voltage_lsb;
+ 	int bus_voltage_shift;
+ 	int bus_voltage_lsb;	/* uV */
+ 	int power_lsb;		/* uW */
+@@ -114,10 +170,15 @@ struct ina2xx_data {
+ 
+ static const struct ina2xx_config ina2xx_config[] = {
+ 	[ina219] = {
+-		.config_default = INA219_CONFIG_DEFAULT,
++		.config_default =	INA219_CONFIG_BRNG_32V | \
++					INA219_CONFIG_PGA_8 | \
++					INA219_CONFIG_BADC_12B_1S | \
++					INA219_CONFIG_SADC_12B_1S | \
++					INA219_CONFIG_MODE_ALL_CONT,
+ 		.calibration_factor = 40960000,
+ 		.registers = INA219_REGISTERS,
+ 		.shunt_div = 100,
++		.shunt_voltage_lsb = 10,
+ 		.bus_voltage_shift = 3,
+ 		.bus_voltage_lsb = 4000,
+ 		.power_lsb = 20000,
+@@ -127,6 +188,7 @@ static const struct ina2xx_config ina2xx_config[] = {
+ 		.calibration_factor = 5120000,
+ 		.registers = INA226_REGISTERS,
+ 		.shunt_div = 400,
++		.shunt_voltage_lsb = 10,
+ 		.bus_voltage_shift = 0,
+ 		.bus_voltage_lsb = 1250,
+ 		.power_lsb = 25000,
+@@ -169,9 +231,9 @@ static u16 ina226_interval_to_reg(int interval)
+ }
+ 
+ static int ina2xx_calibrate(struct ina2xx_data *data)
+-{
++{	/* FIXME val is u16, but 40960000/500 (Rshunt in uOhms) gives 81920 that is bigger than 65535 (max_u16) */
+ 	u16 val = DIV_ROUND_CLOSEST(data->config->calibration_factor,
+-				    data->rshunt);
++				data->rshunt);
+ 
+ 	return regmap_write(data->regmap, INA2XX_CALIBRATION, val);
+ }
+@@ -368,6 +430,200 @@ static ssize_t ina226_show_interval(struct device *dev,
+ 	return snprintf(buf, PAGE_SIZE, "%d\n", ina226_reg_to_interval(regval));
+ }
+ 
++static ssize_t ina219_set_pga_gain(struct device *dev,
++				struct device_attribute *da,
++				const char *buf, size_t count)
++{
++	struct ina2xx_data *data = dev_get_drvdata(dev);
++	unsigned long val;
++	unsigned int regval;
++	int status;
++
++	status = kstrtoul(buf, 10, &val);
++	if (status < 0)
++		return status;
++
++	switch(val) {
++	case 1:
++		regval = INA219_CONFIG_PGA_1;
++		break;
++	case 2:
++		regval = INA219_CONFIG_PGA_2;
++		break;
++	case 4:
++		regval = INA219_CONFIG_PGA_4;
++		break;
++	case 8:
++		regval = INA219_CONFIG_PGA_8;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	status = regmap_update_bits(data->regmap, INA2XX_CONFIG,
++		INA219_CONFIG_PGA_MASK, regval);
++	if (status < 0)
++		return status;
++
++	return count;
++}
++
++static ssize_t ina219_get_pga_gain(struct device *dev,
++				struct device_attribute *da, char *buf)
++{
++	struct ina2xx_data *data = dev_get_drvdata(dev);
++	int status;
++	unsigned int regval;
++
++	status = regmap_read(data->regmap, INA2XX_CONFIG, &regval);
++	if (status)
++		return status;
++
++	regval &= INA219_CONFIG_PGA_MASK;
++	regval >>= 11;
++	return snprintf(buf, PAGE_SIZE, "%d\n", 1<<regval);
++}
++
++static ssize_t ina219_set_max_vbus(struct device *dev,
++				struct device_attribute *da,
++				const char *buf, size_t count)
++{
++	struct ina2xx_data *data = dev_get_drvdata(dev);
++	unsigned long val;
++	unsigned int regval;
++	int status;
++
++	status = kstrtoul(buf, 10, &val);
++	if (status < 0)
++		return status;
++
++	if (val == 16) {
++		regval = INA219_CONFIG_BRNG_16V;
++	} else if (val == 32) {
++		regval = INA219_CONFIG_BRNG_32V;
++	} else {
++		return -EINVAL;
++	}
++
++	status = regmap_update_bits(data->regmap, INA2XX_CONFIG,
++				INA219_CONFIG_BRNG_MASK, regval);
++	if (status < 0)
++		return status;
++
++	return count;
++}
++
++static ssize_t ina219_get_max_vbus(struct device *dev,
++				struct device_attribute *da, char *buf)
++{
++	struct ina2xx_data *data = dev_get_drvdata(dev);
++	int status;
++	unsigned int regval;
++
++	status = regmap_read(data->regmap, INA2XX_CONFIG, &regval);
++	if (status)
++		return status;
++
++	regval &= INA219_CONFIG_BRNG_MASK;
++	if (regval == 0)
++		regval = 16;
++	else
++		regval = 32;
++	return snprintf(buf, PAGE_SIZE, "%d\n", regval);
++}
++
++static ssize_t ina219_get_shunt_voltage(struct device *dev,
++				struct device_attribute *da, char *buf)
++{
++	struct ina2xx_data *data = dev_get_drvdata(dev);
++	int status;
++	int regval;
++
++	status = regmap_read(data->regmap, INA2XX_SHUNT_VOLTAGE, &regval);
++	if (status)
++		return status;
++
++	return snprintf(buf, PAGE_SIZE, "%ld\n", (long) regval * data->config->shunt_voltage_lsb);
++}
++
++static ssize_t ina219_set_sadc_resolution(struct device *dev,
++				struct device_attribute *da,
++				const char *buf, size_t count)
++{
++	struct ina2xx_data *data = dev_get_drvdata(dev);
++	unsigned int val;
++	int status;
++
++	status = kstrtouint(buf, 10, &val);
++	if (status < 0)
++		return status;
++
++	if (val > 15)
++		return -EINVAL;
++
++	val <<= 3;
++	status = regmap_update_bits(data->regmap, INA2XX_CONFIG,
++				INA219_CONFIG_SADC_MASK, val);
++	if (status < 0)
++		return status;
++
++	return count;
++}
++
++static ssize_t ina219_get_sadc_resolution(struct device *dev,
++				struct device_attribute *da, char *buf)
++{
++	struct ina2xx_data *data = dev_get_drvdata(dev);
++	int status;
++	unsigned int regval;
++
++	status = regmap_read(data->regmap, INA2XX_CONFIG, &regval);
++	if (status)
++		return status;
++
++	return snprintf(buf, PAGE_SIZE, "%d\n", (u16) (regval & INA219_CONFIG_SADC_MASK) >> 3);
++}
++
++static ssize_t ina219_set_badc_resolution(struct device *dev,
++				struct device_attribute *da,
++				const char *buf, size_t count)
++{
++	struct ina2xx_data *data = dev_get_drvdata(dev);
++	unsigned int val;
++	int status;
++
++	status = kstrtouint(buf, 10, &val);
++	if (status < 0)
++		return status;
++
++	if (val > 15)
++		return -EINVAL;
++	val <<= 7;
++
++	status = regmap_update_bits(data->regmap, INA2XX_CONFIG,
++				INA219_CONFIG_BADC_MASK, val);
++	if (status < 0)
++		return status;
++
++	return count;
++}
++
++static ssize_t ina219_get_badc_resolution(struct device *dev,
++				struct device_attribute *da, char *buf)
++{
++	struct ina2xx_data *data = dev_get_drvdata(dev);
++	int status;
++	unsigned int regval;
++
++	status = regmap_read(data->regmap, INA2XX_CONFIG, &regval);
++	if (status)
++		return status;
++
++	return snprintf(buf, PAGE_SIZE, "%d\n", (u16) (regval & INA219_CONFIG_BADC_MASK) >> 7);
++}
++
++
++
+ /* shunt voltage */
+ static SENSOR_DEVICE_ATTR(in0_input, S_IRUGO, ina2xx_show_value, NULL,
+ 			  INA2XX_SHUNT_VOLTAGE);
+@@ -384,6 +640,9 @@ static SENSOR_DEVICE_ATTR(curr1_input, S_IRUGO, ina2xx_show_value, NULL,
+ static SENSOR_DEVICE_ATTR(power1_input, S_IRUGO, ina2xx_show_value, NULL,
+ 			  INA2XX_POWER);
+ 
++/* raw shunt voltage */
++static SENSOR_DEVICE_ATTR(shunt_voltage, S_IRUGO, ina219_get_shunt_voltage, NULL, 0);
++
+ /* shunt resistance */
+ static SENSOR_DEVICE_ATTR(shunt_resistor, S_IRUGO | S_IWUSR,
+ 			  ina2xx_show_value, ina2xx_set_shunt,
+@@ -393,6 +652,22 @@ static SENSOR_DEVICE_ATTR(shunt_resistor, S_IRUGO | S_IWUSR,
+ static SENSOR_DEVICE_ATTR(update_interval, S_IRUGO | S_IWUSR,
+ 			  ina226_show_interval, ina226_set_interval, 0);
+ 
++/* shunt ADC gain */
++static SENSOR_DEVICE_ATTR(cfg_pga_gain, S_IRUGO | S_IWUSR,
++			  ina219_get_pga_gain, ina219_set_pga_gain, 0);
++
++/* max VBUS voltage  */
++static SENSOR_DEVICE_ATTR(cfg_max_vbus, S_IRUGO | S_IWUSR,
++			  ina219_get_max_vbus, ina219_set_max_vbus, 0);
++
++/* SADC resolution and sampling */
++static SENSOR_DEVICE_ATTR(cfg_sadc_res, S_IRUGO | S_IWUSR,
++			  ina219_get_sadc_resolution, ina219_set_sadc_resolution, 0);
++
++/* BADC resolution and sampling */
++static SENSOR_DEVICE_ATTR(cfg_badc_res, S_IRUGO | S_IWUSR,
++			  ina219_get_badc_resolution, ina219_set_badc_resolution, 0);
++
+ /* pointers to created device attributes */
+ static struct attribute *ina2xx_attrs[] = {
+ 	&sensor_dev_attr_in0_input.dev_attr.attr,
+@@ -400,6 +675,11 @@ static struct attribute *ina2xx_attrs[] = {
+ 	&sensor_dev_attr_curr1_input.dev_attr.attr,
+ 	&sensor_dev_attr_power1_input.dev_attr.attr,
+ 	&sensor_dev_attr_shunt_resistor.dev_attr.attr,
++	&sensor_dev_attr_shunt_voltage.dev_attr.attr,
++	&sensor_dev_attr_cfg_pga_gain.dev_attr.attr,
++	&sensor_dev_attr_cfg_max_vbus.dev_attr.attr,
++	&sensor_dev_attr_cfg_sadc_res.dev_attr.attr,
++	&sensor_dev_attr_cfg_badc_res.dev_attr.attr,
+ 	NULL,
+ };
+ 

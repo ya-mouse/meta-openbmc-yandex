@@ -47,6 +47,7 @@ SRC_URI += "file://103-raspberrypi-of.patch"
 
 # SRC_URI += "file://085-ipmi-slave-addr.patch"
 SRC_URI += "file://086-ipmi-hacks.patch"
+SRC_URI += "file://90-ina2xx.patch"
 
 SRC_URI += "file://shaosi.cfg"
 SRC_URI += "file://aspeed-shaosi-gb30.dts"
