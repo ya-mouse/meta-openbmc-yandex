@@ -356,6 +356,18 @@ function resty_event(ufd, events)
     end
 end
 
+-- Get current fans RPMs and put it to storage
+function fn_get_rpms()
+    for i=1,8 do
+        local file = nixio.open("/sys/class/hwmon/hwmon0/device/fan"..tostring(i).."_input")
+        if file ~= nil then
+                local RPM=tonumber(file:read(8))
+                file:close()
+                db_resty:request('',"FAN_TACHO_"..tostring(i),tonumber(RPM),"POST")
+        end
+    end
+end
+
 local r = uloop.fd_add(db_resty, resty_event, uloop.ULOOP_READ + 0x40)
 
 update_nodes_list()
@@ -445,6 +457,7 @@ sdr_timer = uloop.timer(function()
         v:process_commands()
     end
 
+   fn_get_rpms()
     -- Process sensors
 --     print('========')
 --     for k,v in pairs(hwmon._s) do
