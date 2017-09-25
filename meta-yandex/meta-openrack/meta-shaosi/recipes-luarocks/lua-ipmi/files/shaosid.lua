@@ -13,12 +13,93 @@ local sub = string.sub
 local byte = string.byte
 local band, bxor = bit.band, bit.bxor
 
-local board_number = nixio.open('/etc/openrack-board'):read(16):sub(1, -2)
-if board_number:sub(1, 3) ~= 'CB-' then
-     return
+-- board type, number, etc vars
+local board_type = ''
+local board_number = ''
+local inlet_temp_file = ''
+local board_temp_file = ''
+
+-- Read board name and fill inlet & board temp sensors filenames in sysfs
+local board_name = nixio.open('/etc/openrack-board'):read(16):sub(1, -2)
+if board_name:sub(1, 2) == 'CB' then
+     board_type = 'CB'
+     board_number = board_name:sub(4,4)
+     -- not as easy as for RMC
+     -- Find hwmon that has 7-0048 address - it's inlet sensor, 7-0049 is on-board sensor
+     -- The better way is to check the I2C bus-address
+     board_temp_file = '/sys/class/hwmon/hwmon3/temp1_input'
+     inlet_temp_file = '/sys/class/hwmon/hwmon2/temp1_input'
+     local f = io.open(board_temp_file)
+     if f == nil then
+         -- There is no inlet on this board
+	 inlet_temp_file = '/sys/class/hwmon/hwmon2/temp1_input'
+	 board_temp_file = '/sys/class/hwmon/hwmon2/temp1_input'
+     end
+else
+     board_type = 'RMC'
+     board_number = board_name:sub(5,5)
+     inlet_temp_file = '/sys/class/hwmon/hwmon1/temp1_input'
+     board_temp_file = '/sys/class/hwmon/hwmon0/temp1_input'
+end
+
+-- Read firmware version
+local os_release=''
+local file = io.open('/etc/os-release')
+if file ~= nil then
+    for line in file:lines() do
+        if string.find(line, 'VERSION=\"') then
+	    os_release = line:match([[VERSION="(.+)"]])
+	end
+    end
 end
 
 uloop.init()
+
+-- Setup db_resty
+local db_resty = nixio.socket('unix', 'stream')
+if not db_resty:connect('/run/openresty/socket') then exit(-1) end
+function resty_event(ufd, events)
+    local d, errno, errmsg = ufd:read(4096)
+    if d == '' or d == nil then
+        -- print('RECONNECT', events)
+        db_resty:close()
+        db_resty = nixio.socket('unix', 'stream')
+        db_resty:connect('/run/openresty/socket')
+        uloop.fd_add(db_resty, resty_event, uloop.ULOOP_READ + 0x40)
+--    else
+--        print('RESTY: ', tostring(d), #db_que, events)
+    end
+end
+
+getmetatable(db_resty).getfd = function(self) return tonumber(tostring(self):sub(13)) end
+
+-- Perform request itself. Can be called directly
+getmetatable(db_resty).rawreq = function(self, url, name, value, method)
+    local body = cjson_encode({ data = value })
+    if url == '' then url = '/api/storage' end
+    if name ~= '' then name = '/'..name end -- This is needed to allow just /api/storage POST request, with empty name
+    url = url..name
+    body = (method or 'POST')..' '..url.." HTTP/1.1\r\nUser-Agent: collector/1.0\r\nAccept: */*\r\nHost: localhost\r\nContent-type: application/json\r\nConnection: keep-alive\r\nContent-Length: "..#body.."\r\n\r\n"..body.."\r\n\r\n"
+    local cnt, errno, errmsg = db_resty:write(body)
+    if errno ~= nil then
+        -- print('RECONNECT', errno, errmsg)
+        db_resty:close()
+        db_resty = nixio.socket('unix', 'stream')
+        db_resty:connect('/run/openresty/socket')
+        uloop.fd_add(db_resty, resty_event, uloop.ULOOP_READ + 0x40)
+        if db_resty:write(body) == nil then print('WRITE failed') end
+    end
+end
+
+-- Post data to node branch
+getmetatable(db_resty).request = function(self, devnum, name, value, method)
+    local url = '/api/storage/'..board_name
+    if type(devnum) == 'number' then
+        devnum = devnum + 1
+        url = url..'/'..tostring(devnum)
+    end
+    db_resty:rawreq(url, name, value, method)
+end
 
 local pollgpio = { }
 local presence = { }
@@ -75,25 +156,6 @@ end
 local ipmi_ev = {}
 local ipmi_devs = {}
 
-local db_resty = nixio.socket('unix', 'stream')
-if not db_resty:connect('/run/openresty/socket') then exit(-1) end
-getmetatable(db_resty).getfd = function(self) return tonumber(tostring(self):sub(13)) end
-getmetatable(db_resty).request = function(self, devnum, name, value, method)
-    -- TODO: keep values in array and post it independetly in coroutine
-    local body = cjson_encode({ data = value })
-    if name ~= '' then name = '/'..name end
-    if type(devnum) == 'number' then devnum = devnum + 1 end
-    body = (method or 'POST')..' /api/storage/'..board_number..'/'..tostring(devnum)..name.." HTTP/1.1\r\nUser-Agent: collector/1.0\r\nAccept: */*\r\nHost: localhost\r\nContent-type: application/json\r\nConnection: keep-alive\r\nContent-Length: "..#body.."\r\n\r\n"..body.."\r\n\r\n"
-    local cnt, errno, errmsg = db_resty:write(body)
-    if errno ~= nil then
-        -- print('RECONNECT', errno, errmsg)
-        db_resty:close()
-        db_resty = nixio.socket('unix', 'stream')
-        db_resty:connect('/run/openresty/socket')
-        uloop.fd_add(db_resty, resty_event, uloop.ULOOP_READ + 0x40)
-        if db_resty:write(body) == nil then print('WRITE failed') end
-    end
-end
 local db_que = {}
 
 local L_ipmi_scope = 'eth1'
@@ -326,7 +388,7 @@ function O_ipmi_del(devnum)
     L_ipmi_del(devnum)
 
     ipmi_ev[ufd] = nil
-    ipmi_devs[devnum] = nil 
+    ipmi_devs[devnum] = nil
 
     update_nodes_list()
 end
@@ -341,19 +403,6 @@ function L_ipmi_del(devnum)
     lip:close()
 
     oip._lan = nil
-end
-
-function resty_event(ufd, events)
-    local d, errno, errmsg = ufd:read(4096)
-    if d == '' or d == nil then
-        print('RECONNECT', events)
-        db_resty:close()
-        db_resty = nixio.socket('unix', 'stream')
-        db_resty:connect('/run/openresty/socket')
-        uloop.fd_add(db_resty, resty_event, uloop.ULOOP_READ + 0x40)
---    else
---        print('RESTY: ', tostring(d), #db_que, events)
-    end
 end
 
 local r = uloop.fd_add(db_resty, resty_event, uloop.ULOOP_READ + 0x40)
@@ -452,21 +501,50 @@ sdr_timer = uloop.timer(function()
 --     end
 end, 1000)
 
--- Get current fans RPMs and put it to storage
+-- Post current fans RPMs and put it to storage
 function fn_get_rpms()
     for i=1,8 do
-        local file = nixio.open("/sys/class/hwmon/hwmon0/device/fan"..tostring(i).."_input")
+        local file = nixio.open('/sys/class/hwmon/hwmon0/device/fan'..tostring(i)..'_input')
         if file ~= nil then
-                local RPM=tonumber(file:read(8))
+                local RPM = tonumber(file:read(8))
                 file:close()
-                db_resty:request('',"FAN_TACHO_"..tostring(i),{ value = tonumber(RPM), duration=60 },"POST")
+                db_resty:request('','FAN_TACHO_'..tostring(i),{ value = tonumber(RPM), duration=60 },'POST')
         end
     end
 end
 
+-- Post inlet temp
+function fn_get_inlet_temp()
+    local f = nixio.open(inlet_temp_file)
+    if f == nil then return end
+    local T = math.floor(tonumber(f:read(8)) / 1000)
+    f:close()
+    db_resty:rawreq('','SELF/INLET_TEMP',{ value = tonumber(T), duration=60 },'POST')
+end
+
+-- Post board temp
+function fn_get_board_temp()
+    local f = nixio.open(board_temp_file)
+    if f == nil then return end
+    local T = math.floor(tonumber(f:read(8)) / 1000)
+    f:close()
+    db_resty:rawreq('','SELF/BOARD_TEMP',{ value = tonumber(T), duration=60 },'POST')
+end
+
+-- Post the name, version etc
+function fn_post_selfinfo()
+   db_resty:rawreq('','SELF/type', board_type,'POST')
+   db_resty:rawreq('','SELF/version', os_release,'POST')
+   db_resty:rawreq('','SELF/number', board_number,'POST')
+end
+
+fn_post_selfinfo()
+
 -- 5 seconds loop
 loop5s = uloop.timer(function()
         fn_get_rpms()
+	fn_get_inlet_temp()
+	fn_get_board_temp()
         loop5s:set(5000)
 end,1)
 
