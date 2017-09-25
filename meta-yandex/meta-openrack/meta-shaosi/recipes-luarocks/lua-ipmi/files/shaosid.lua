@@ -452,4 +452,22 @@ sdr_timer = uloop.timer(function()
 --     end
 end, 1000)
 
+-- Get current fans RPMs and put it to storage
+function fn_get_rpms()
+    for i=1,8 do
+        local file = nixio.open("/sys/class/hwmon/hwmon0/device/fan"..tostring(i).."_input")
+        if file ~= nil then
+                local RPM=tonumber(file:read(8))
+                file:close()
+                db_resty:request('',"FAN_TACHO_"..tostring(i),{ value = tonumber(RPM), duration=60 },"POST")
+        end
+    end
+end
+
+-- 5 seconds loop
+loop5s = uloop.timer(function()
+        fn_get_rpms()
+        loop5s:set(5000)
+end,1)
+
 uloop.run()
