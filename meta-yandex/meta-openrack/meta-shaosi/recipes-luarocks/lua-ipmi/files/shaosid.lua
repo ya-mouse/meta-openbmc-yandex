@@ -494,6 +494,7 @@ sdr_timer = uloop.timer(function()
         v:process_commands()
     end
 
+   fn_get_rpms()
     -- Process sensors
 --     print('========')
 --     for k,v in pairs(hwmon._s) do
