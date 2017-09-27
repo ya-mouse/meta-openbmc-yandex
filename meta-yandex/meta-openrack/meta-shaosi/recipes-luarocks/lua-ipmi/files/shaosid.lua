@@ -13,6 +13,9 @@ local sub = string.sub
 local byte = string.byte
 local band, bxor = bit.band, bit.bxor
 
+-- global TTL of self data
+local global_ttl = 60
+
 -- board type, number, etc vars
 local board_type = ''
 local board_number = ''
@@ -502,16 +505,31 @@ sdr_timer = uloop.timer(function()
 --     end
 end, 1000)
 
--- Post current fans RPMs and put it to storage
-function fn_get_rpms()
+-- Array of file descriptors for fan tacho files
+fan_tacho_fd = {}
+
+function fn_open_fanfiles()
     for i=1,8 do
         local file = nixio.open('/sys/class/hwmon/hwmon0/device/fan'..tostring(i)..'_input')
+        fan_tacho_fd[i] = file
+    end
+end
+
+-- Post current fans RPMs and put it to storage
+function fn_get_rpms()
+    local rpm = {}
+    local d = {}
+    for i=1,8 do
+        local file = fan_tacho_fd[i]
         if file ~= nil then
+                file:seek(0,"set")
                 local RPM = tonumber(file:read(8))
-                file:close()
-                db_resty:request('','FAN_TACHO_'..tostring(i),{ value = tonumber(RPM), duration=60 },'POST')
+                d['SELF/FAN_TACHO_'..tostring(i)] = {value = tonumber(RPM), duration = global_ttl}
+                rpm[i] = tonumber(RPM)
         end
     end
+    d['SELF/FAN_TACHO'] = { value = cjson_encode(rpm), duration = global_ttl }
+    db_resty:rawreq('','',d,'POST')
 end
 
 -- Post inlet temp
@@ -520,7 +538,7 @@ function fn_get_inlet_temp()
     if f == nil then return end
     local T = math.floor(tonumber(f:read(8)) / 1000)
     f:close()
-    db_resty:rawreq('','SELF/INLET_TEMP',{ value = tonumber(T), duration=60 },'POST')
+    db_resty:rawreq('','SELF/INLET_TEMP',{ value = tonumber(T), duration=global_ttl },'POST')
 end
 
 -- Post board temp
@@ -529,7 +547,7 @@ function fn_get_board_temp()
     if f == nil then return end
     local T = math.floor(tonumber(f:read(8)) / 1000)
     f:close()
-    db_resty:rawreq('','SELF/BOARD_TEMP',{ value = tonumber(T), duration=60 },'POST')
+    db_resty:rawreq('','SELF/BOARD_TEMP',{ value = tonumber(T), duration=global_ttl },'POST')
 end
 
 -- Post the name, version etc
@@ -540,6 +558,7 @@ function fn_post_selfinfo()
 end
 
 fn_post_selfinfo()
+fn_open_fanfiles()
 
 -- 5 seconds loop
 loop5s = uloop.timer(function()
