@@ -2,7 +2,11 @@
 
 defaultfan=140
 if [ ! -z $1 ]; then
-  defaultfan=$1
+    re='^[0-9]+$'
+    if [[ $1 =~ $re ]] ; then
+        defaultfan=$1
+    fi
+
 fi
 
 fgrep w83795g /sys/class/hwmon/hwmon*/uevent -l | while read hwmon; do
