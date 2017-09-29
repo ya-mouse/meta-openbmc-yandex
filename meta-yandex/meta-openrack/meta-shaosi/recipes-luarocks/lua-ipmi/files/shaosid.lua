@@ -60,13 +60,16 @@ uloop.init()
 
 -- Setup db_resty
 local db_resty = nixio.socket('unix', 'stream')
+db_resty:setopt('socket','keepalive',1)
 if not db_resty:connect('/run/openresty/socket') then exit(-1) end
+
 function resty_event(ufd, events)
     local d, errno, errmsg = ufd:read(4096)
     if d == '' or d == nil then
         -- print('RECONNECT', events)
         db_resty:close()
         db_resty = nixio.socket('unix', 'stream')
+	db_resty:setopt('socket','keepalive',1)
         db_resty:connect('/run/openresty/socket')
         uloop.fd_add(db_resty, resty_event, uloop.ULOOP_READ + 0x40)
 --    else
@@ -75,6 +78,8 @@ function resty_event(ufd, events)
 end
 
 getmetatable(db_resty).getfd = function(self) return tonumber(tostring(self):sub(13)) end
+
+local r = uloop.fd_add(db_resty, resty_event, uloop.ULOOP_READ + 0x40)
 
 -- Perform request itself. Can be called directly
 getmetatable(db_resty).rawreq = function(self, url, name, value, method)
@@ -88,6 +93,7 @@ getmetatable(db_resty).rawreq = function(self, url, name, value, method)
         -- print('RECONNECT', errno, errmsg)
         db_resty:close()
         db_resty = nixio.socket('unix', 'stream')
+	db_resty:setopt('socket','keepalive',1)
         db_resty:connect('/run/openresty/socket')
         uloop.fd_add(db_resty, resty_event, uloop.ULOOP_READ + 0x40)
         if db_resty:write(body) == nil then print('WRITE failed') end
@@ -166,13 +172,13 @@ local L_ipmi_scope = 'eth1'
 local O_ipmi_sdrs = {}
 local L_ipmi_sdrs = {
   -- pattern | round | ttl | *replace pattern
-  {'CPU[0-9]_TEMP', 2, 60.0},
+  {'CPU[0-9]_TEMP', 1, 60.0},
   {'NVME_([0-9])_TEMP', 2, 60.0},
   {'SATA[0-9]+_TEMP', 2, 60.0},
   {'SIO_TEMP_[0-9]', 2, 60.0},
   {'BP[12]_HDD_TEMP[12]', 2, 60.0},
   {'.+_TEMP', 2, 60.0},
-  {'SYS_PWR', 2, 60.0},
+  {'SYS_PWR', 1, 60.0},
   {'P12V', 2, 60.0},
   {'SATA[0-9]+_STAT', 2, 60.0},
   {'P0N[01]_STAT', 2, 60.0},
@@ -408,14 +414,13 @@ function L_ipmi_del(devnum)
     oip._lan = nil
 end
 
-local r = uloop.fd_add(db_resty, resty_event, uloop.ULOOP_READ + 0x40)
 
 update_nodes_list()
 
 local sdr_timer
 local dtoverlay_support = true
 sdr_timer = uloop.timer(function()
-    sdr_timer:set(3000)
+    sdr_timer:set(1000)
 
     local k, v, t, i
 
@@ -502,7 +507,7 @@ sdr_timer = uloop.timer(function()
 --     for k,v in pairs(hwmon._s) do
 --         print(v.label, v:value())
 --     end
-end, 1000)
+end, 10)
 
 -- Array of file descriptors for fan tacho files
 fan_tacho_fd = {}
