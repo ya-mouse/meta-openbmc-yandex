@@ -52,7 +52,6 @@ systemctl disable org.openbmc.UserManager.service
 systemctl disable org.openbmc.NetworkManager.service
 systemctl disable org.openbmc.control.led.service
 systemctl disable xyz.openbmc_project.ObjectMapper.service
-systemctl disable systemd-hostnamed.service
 systemctl disable obmc-mgr-state.service
 systemctl disable mapper-wait@-org-openbmc-control-chassis0.service
 systemctl disable mapper-wait@-org-openbmc-control-power0.service
@@ -78,7 +77,6 @@ systemctl stop org.openbmc.UserManager.service
 systemctl stop org.openbmc.NetworkManager.service
 systemctl stop org.openbmc.control.led.service
 systemctl stop xyz.openbmc_project.ObjectMapper.service
-systemctl stop systemd-hostnamed.service
 systemctl stop obmc-mgr-state.service
 systemctl stop mapper-wait@-org-openbmc-control-chassis0.service
 systemctl stop mapper-wait@-org-openbmc-control-power0.service
