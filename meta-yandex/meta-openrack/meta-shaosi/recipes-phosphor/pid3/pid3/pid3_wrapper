@@ -38,8 +38,8 @@ RestartDelay=30
 # Set fans to failsafe mode
 /usr/sbin/safefans.sh
 
-# Wait for our CB to be the pilot flying
-while [ ! -e /run/phoshpor-gevent.socket ] ; do
+# Wait for nginx start
+while [ ! -e /run/openresty/socket ] ; do
     sleep 5
 done
 

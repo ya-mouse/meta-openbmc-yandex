@@ -1,6 +1,6 @@
 [Unit]
 Description=PID3 daemon
-Requires=obmc-shaosid.service obmc-fans-ready.target
+Requires=obmc-shaosid.service openresty.service
 [Service]
 Type=simple
 Restart=always
