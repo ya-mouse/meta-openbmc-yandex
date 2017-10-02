@@ -38,8 +38,10 @@ old_name="$(cat /etc/openrack-board 2>/dev/null ||:)"
 # Disable avahi
 systemctl disable avahi-daemon.service
 systemctl disable avahi-daemon.socket
+systemctl disable obmc-hwmon.service
 systemctl stop avahi-daemon.service
 systemctl stop avahi-daemon.socket
+systemctl stop obmc-hwmon.service
 
 # Start PID on CB
 if [ "$t" = "RMC" ]; then
