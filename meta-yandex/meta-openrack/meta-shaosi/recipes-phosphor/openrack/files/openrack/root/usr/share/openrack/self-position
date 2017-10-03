@@ -57,6 +57,8 @@ systemctl disable mapper-wait@-org-openbmc-control-chassis0.service
 systemctl disable mapper-wait@-org-openbmc-control-power0.service
 systemctl disable mapper-wait@-org-openbmc-NetworkManager-Interface.service
 systemctl disable mapper-wait@-org-openbmc-settings-host0.service
+systemctl disable mapper-wait@-org-openbmc-control-host0.service
+systemctl disable mapper-wait@-org-openbmc-sensors.service
 systemctl disable obmc-console-ssh.socket
 systemctl disable rest-dbus.socket
 
@@ -82,6 +84,8 @@ systemctl stop mapper-wait@-org-openbmc-control-chassis0.service
 systemctl stop mapper-wait@-org-openbmc-control-power0.service
 systemctl stop mapper-wait@-org-openbmc-NetworkManager-Interface.service
 systemctl stop mapper-wait@-org-openbmc-settings-host0.service
+systemctl stop mapper-wait@-org-openbmc-control-host0.service
+systemctl stop mapper-wait@-org-openbmc-sensors.service
 systemctl stop obmc-console-ssh.socket
 systemctl stop rest-dbus.socket
 
