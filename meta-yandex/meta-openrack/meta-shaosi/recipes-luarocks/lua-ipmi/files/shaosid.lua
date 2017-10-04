@@ -133,35 +133,6 @@ end
 local overlay_acts = { }
 local overlay_lock = { }
 
---
--- Node change handler
---
-for i, n in pairs(nodegpio) do
-    local f = init_gpio(304, n) -- 320 - base SoC
-    local timer
-    -- presence[f].ev = uloop.fd_add(f, function(ufd, events)
-    -- ...
-    -- end, uloop.ULOOP_READ + uloop.ULOOP_EDGE_TRIGGER + 0x40) -- uloop.ULOOP_ERROR_CB
-    presence[f] = setmetatable({ n = tostring(i), v = false, ev = false, f = f }, {
-        __call = function(tbl)
-            timer:set(1000)
-            local ufd = tbl.f
-            ufd:seek(0, "set")
-            local v = tonumber(ufd:read(2)) == 0
-            local p = tbl
-            -- print(v, '<>', p.v)
-            if p.v ~= v then
-                print(p.n, 'CHANGED', p.v, v)
-                p.v = v
-                if not overlay_acts[p.n] then overlay_acts[p.n] = {} end
-                table.insert(overlay_acts[p.n], v)
-            end
-       end
-    })
-    timer = uloop.timer(presence[f], 1000)
-    presence[f].timer = timer
-end
-
 local ipmi_ev = {}
 local ipmi_devs = {}
 
@@ -415,11 +386,41 @@ function L_ipmi_del(devnum)
 end
 
 
-update_nodes_list()
+if board_type == 'CB' then
+  --
+  -- Node change handler
+  --
+  for i, n in pairs(nodegpio) do
+    local f = init_gpio(304, n) -- 320 - base SoC
+    local timer
+    -- presence[f].ev = uloop.fd_add(f, function(ufd, events)
+    -- ...
+    -- end, uloop.ULOOP_READ + uloop.ULOOP_EDGE_TRIGGER + 0x40) -- uloop.ULOOP_ERROR_CB
+    presence[f] = setmetatable({ n = tostring(i), v = false, ev = false, f = f }, {
+        __call = function(tbl)
+            timer:set(1000)
+            local ufd = tbl.f
+            ufd:seek(0, "set")
+            local v = tonumber(ufd:read(2)) == 0
+            local p = tbl
+            -- print(v, '<>', p.v)
+            if p.v ~= v then
+                print(p.n, 'CHANGED', p.v, v)
+                p.v = v
+                if not overlay_acts[p.n] then overlay_acts[p.n] = {} end
+                table.insert(overlay_acts[p.n], v)
+            end
+       end
+    })
+    timer = uloop.timer(presence[f], 1000)
+    presence[f].timer = timer
+  end
 
-local sdr_timer
-local dtoverlay_support = true
-sdr_timer = uloop.timer(function()
+  update_nodes_list()
+
+  local sdr_timer
+  local dtoverlay_support = true
+  sdr_timer = uloop.timer(function()
     sdr_timer:set(1000)
 
     local k, v, t, i
@@ -503,11 +504,12 @@ sdr_timer = uloop.timer(function()
     end
 
     -- Process sensors
---     print('========')
---     for k,v in pairs(hwmon._s) do
---         print(v.label, v:value())
---     end
-end, 10)
+  --     print('========')
+  --     for k,v in pairs(hwmon._s) do
+  --         print(v.label, v:value())
+  --     end
+  end, 10)
+end
 
 -- Array of file descriptors for fan tacho files
 fan_tacho_fd = {}

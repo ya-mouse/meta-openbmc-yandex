@@ -35,59 +35,63 @@ t=$(board_type)${factory_test:+-factory}
 # Check for old board type & name
 old_name="$(cat /etc/openrack-board 2>/dev/null ||:)"
 
-# Disable unused services
-systemctl disable avahi-daemon.service
-systemctl disable avahi-daemon.socket
-systemctl disable obmc-hwmon.service
-systemctl disable org.openbmc.control.Fans.service
-systemctl disable phosphor-gevent.service
-systemctl disable org.openbmc.managers.System.service
-systemctl disable org.openbmc.settings.Host.service
-systemctl disable org.openbmc.Inventory.service
-systemctl disable org.openbmc.Sensors.service
-systemctl disable org.openbmc.managers.Download.service
-systemctl disable org.openbmc.records.events.service
-systemctl disable org.openbmc.records.events.service
-systemctl disable org.openbmc.UserManager.service
-systemctl disable org.openbmc.NetworkManager.service
-systemctl disable org.openbmc.control.led.service
-systemctl disable xyz.openbmc_project.ObjectMapper.service
-systemctl disable obmc-mgr-state.service
-systemctl disable mapper-wait@-org-openbmc-control-chassis0.service
-systemctl disable mapper-wait@-org-openbmc-control-power0.service
-systemctl disable mapper-wait@-org-openbmc-NetworkManager-Interface.service
-systemctl disable mapper-wait@-org-openbmc-settings-host0.service
-systemctl disable mapper-wait@-org-openbmc-control-host0.service
-systemctl disable mapper-wait@-org-openbmc-sensors.service
-systemctl disable obmc-console-ssh.socket
-systemctl disable rest-dbus.socket
+if [ ! -f "/etc/notfirstrun" ]; then
+  # Disable unused services
+  systemctl disable avahi-daemon.service
+  systemctl disable avahi-daemon.socket
+  systemctl disable obmc-hwmon.service
+  systemctl disable org.openbmc.control.Fans.service
+  systemctl disable phosphor-gevent.service
+  systemctl disable org.openbmc.managers.System.service
+  systemctl disable org.openbmc.settings.Host.service
+  systemctl disable org.openbmc.Inventory.service
+  systemctl disable org.openbmc.Sensors.service
+  systemctl disable org.openbmc.managers.Download.service
+  systemctl disable org.openbmc.records.events.service
+  systemctl disable org.openbmc.records.events.service
+  systemctl disable org.openbmc.UserManager.service
+  systemctl disable org.openbmc.NetworkManager.service
+  systemctl disable org.openbmc.control.led.service
+  systemctl disable xyz.openbmc_project.ObjectMapper.service
+  systemctl disable obmc-mgr-state.service
+  systemctl disable mapper-wait@-org-openbmc-control-chassis0.service
+  systemctl disable mapper-wait@-org-openbmc-control-power0.service
+  systemctl disable mapper-wait@-org-openbmc-NetworkManager-Interface.service
+  systemctl disable mapper-wait@-org-openbmc-settings-host0.service
+  systemctl disable mapper-wait@-org-openbmc-control-host0.service
+  systemctl disable mapper-wait@-org-openbmc-sensors.service
+  systemctl disable obmc-console-ssh.socket
+  systemctl disable rest-dbus.socket
 
-systemctl stop avahi-daemon.service
-systemctl stop avahi-daemon.socket
-systemctl stop obmc-hwmon.service
-systemctl stop org.openbmc.control.Fans.service
-systemctl stop phosphor-gevent.service
-systemctl stop org.openbmc.managers.System.service
-systemctl stop org.openbmc.settings.Host.service
-systemctl stop org.openbmc.Inventory.service
-systemctl stop org.openbmc.Sensors.service
-systemctl stop org.openbmc.managers.Download.service
-systemctl stop system-org.openbmc.control.Bmc.slice
-systemctl stop org.openbmc.records.events.service
-systemctl stop org.openbmc.records.events.service
-systemctl stop org.openbmc.UserManager.service
-systemctl stop org.openbmc.NetworkManager.service
-systemctl stop org.openbmc.control.led.service
-systemctl stop xyz.openbmc_project.ObjectMapper.service
-systemctl stop obmc-mgr-state.service
-systemctl stop mapper-wait@-org-openbmc-control-chassis0.service
-systemctl stop mapper-wait@-org-openbmc-control-power0.service
-systemctl stop mapper-wait@-org-openbmc-NetworkManager-Interface.service
-systemctl stop mapper-wait@-org-openbmc-settings-host0.service
-systemctl stop mapper-wait@-org-openbmc-control-host0.service
-systemctl stop mapper-wait@-org-openbmc-sensors.service
-systemctl stop obmc-console-ssh.socket
-systemctl stop rest-dbus.socket
+  systemctl stop avahi-daemon.service
+  systemctl stop avahi-daemon.socket
+  systemctl stop obmc-hwmon.service
+  systemctl stop org.openbmc.control.Fans.service
+  systemctl stop phosphor-gevent.service
+  systemctl stop org.openbmc.managers.System.service
+  systemctl stop org.openbmc.settings.Host.service
+  systemctl stop org.openbmc.Inventory.service
+  systemctl stop org.openbmc.Sensors.service
+  systemctl stop org.openbmc.managers.Download.service
+  systemctl stop system-org.openbmc.control.Bmc.slice
+  systemctl stop org.openbmc.records.events.service
+  systemctl stop org.openbmc.records.events.service
+  systemctl stop org.openbmc.UserManager.service
+  systemctl stop org.openbmc.NetworkManager.service
+  systemctl stop org.openbmc.control.led.service
+  systemctl stop xyz.openbmc_project.ObjectMapper.service
+  systemctl stop obmc-mgr-state.service
+  systemctl stop mapper-wait@-org-openbmc-control-chassis0.service
+  systemctl stop mapper-wait@-org-openbmc-control-power0.service
+  systemctl stop mapper-wait@-org-openbmc-NetworkManager-Interface.service
+  systemctl stop mapper-wait@-org-openbmc-settings-host0.service
+  systemctl stop mapper-wait@-org-openbmc-control-host0.service
+  systemctl stop mapper-wait@-org-openbmc-sensors.service
+  systemctl stop obmc-console-ssh.socket
+  systemctl stop rest-dbus.socket
+
+  touch "/etc/notfirstrun"
+fi
 
 # Start PID on CB
 if [ "$t" = "RMC" ]; then
