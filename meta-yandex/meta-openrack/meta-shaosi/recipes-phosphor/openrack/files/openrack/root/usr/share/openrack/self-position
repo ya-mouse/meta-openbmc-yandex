@@ -54,6 +54,7 @@ if [ ! -f "/etc/notfirstrun" ]; then
   systemctl disable org.openbmc.control.led.service
   systemctl disable xyz.openbmc_project.ObjectMapper.service
   systemctl disable obmc-mgr-state.service
+  systemctl disable org.openbmc.control.Bmc@0.service
   systemctl disable mapper-wait@-org-openbmc-control-chassis0.service
   systemctl disable mapper-wait@-org-openbmc-control-power0.service
   systemctl disable mapper-wait@-org-openbmc-NetworkManager-Interface.service
@@ -62,6 +63,7 @@ if [ ! -f "/etc/notfirstrun" ]; then
   systemctl disable mapper-wait@-org-openbmc-sensors.service
   systemctl disable obmc-console-ssh.socket
   systemctl disable rest-dbus.socket
+  systemctl disable network-update-dns.service
 
   systemctl stop avahi-daemon.service
   systemctl stop avahi-daemon.socket
@@ -81,6 +83,7 @@ if [ ! -f "/etc/notfirstrun" ]; then
   systemctl stop org.openbmc.control.led.service
   systemctl stop xyz.openbmc_project.ObjectMapper.service
   systemctl stop obmc-mgr-state.service
+  systemctl stop org.openbmc.control.Bmc@0.service
   systemctl stop mapper-wait@-org-openbmc-control-chassis0.service
   systemctl stop mapper-wait@-org-openbmc-control-power0.service
   systemctl stop mapper-wait@-org-openbmc-NetworkManager-Interface.service
@@ -89,8 +92,16 @@ if [ ! -f "/etc/notfirstrun" ]; then
   systemctl stop mapper-wait@-org-openbmc-sensors.service
   systemctl stop obmc-console-ssh.socket
   systemctl stop rest-dbus.socket
+  systemctl stop network-update-dns.service
 
-  touch "/etc/notfirstrun"
+  # Clear "runonce" flag as it's not cleared by service
+  /sbin/fw_setenv openbmconce
+
+  # Check that overlay is running and set flag
+  cat /proc/mounts | grep jffs
+  if [ $? -eq 0 ]; then
+    touch "/etc/notfirstrun"
+  fi
 fi
 
 # Start PID on CB
