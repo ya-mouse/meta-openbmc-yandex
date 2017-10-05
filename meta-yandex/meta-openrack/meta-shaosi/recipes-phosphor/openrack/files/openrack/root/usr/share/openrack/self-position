@@ -61,6 +61,7 @@ if [ ! -f "/etc/notfirstrun" ]; then
   systemctl disable mapper-wait@-org-openbmc-settings-host0.service
   systemctl disable mapper-wait@-org-openbmc-control-host0.service
   systemctl disable mapper-wait@-org-openbmc-sensors.service
+  systemctl disable obmc-console@ttyVUART0.service
   systemctl disable obmc-console-ssh.socket
   systemctl disable rest-dbus.socket
   systemctl disable network-update-dns.service
@@ -90,6 +91,7 @@ if [ ! -f "/etc/notfirstrun" ]; then
   systemctl stop mapper-wait@-org-openbmc-settings-host0.service
   systemctl stop mapper-wait@-org-openbmc-control-host0.service
   systemctl stop mapper-wait@-org-openbmc-sensors.service
+  systemctl stop obmc-console@ttyVUART0.service
   systemctl stop obmc-console-ssh.socket
   systemctl stop rest-dbus.socket
   systemctl stop network-update-dns.service
@@ -108,9 +110,11 @@ fi
 if [ "$t" = "RMC" ]; then
     systemctl disable obmc-pid3.service
     systemctl daemon-reload
+    systemctl stop obmc-pid3.service
 else
     systemctl enable obmc-pid3.service
     systemctl daemon-reload
+    systemctl start obmc-pid3.service
 fi
 
 if [ "$old_name" != "$name" ]; then

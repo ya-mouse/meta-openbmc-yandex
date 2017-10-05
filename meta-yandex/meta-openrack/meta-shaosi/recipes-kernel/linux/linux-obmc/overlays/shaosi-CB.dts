@@ -221,7 +221,6 @@
 			fru {
 				compatible = "atmel,24c256";
 				reg = <0x56>;
-/*				pagesize = <32>; */
 			};
 		};
 	};
@@ -232,13 +231,29 @@
 			/* Common i2c */
 			status = "okay";
 			clock-frequency = <100000>;
-/*
-			ipmb {
-				compatible = "i2c-ipmb";
-				reg = <0x14>;
-				slave-addr = <0x31>;
+		};
+	};
+
+	fragment@11 {
+		target-path = "/";
+		__overlay__ {
+			ledsCB {
+				compatible = "gpio-leds";
+				led_green_1 { label = "led_green_1"; gpios = <&gpio ASPEED_GPIO(I, 4) GPIO_ACTIVE_LOW>; };
+				led_green_2 { label = "led_green_2"; gpios = <&gpio ASPEED_GPIO(D, 0) GPIO_ACTIVE_LOW>; };
+				led_green_3 { label = "led_green_3"; gpios = <&gpio ASPEED_GPIO(D, 1) GPIO_ACTIVE_LOW>; };
+				led_green_4 { label = "led_green_4"; gpios = <&gpio ASPEED_GPIO(D, 2) GPIO_ACTIVE_LOW>; };
+				led_green_5 { label = "led_green_5"; gpios = <&gpio ASPEED_GPIO(D, 3) GPIO_ACTIVE_LOW>; };
+				led_green_6 { label = "led_green_6"; gpios = <&gpio ASPEED_GPIO(D, 4) GPIO_ACTIVE_LOW>; };
+				led_green_7 { label = "led_green_7"; gpios = <&gpio ASPEED_GPIO(D, 5) GPIO_ACTIVE_LOW>; };
+				led_red_1 { label = "led_red_1"; gpios = <&gpio ASPEED_GPIO(I, 5) GPIO_ACTIVE_LOW>; };
+				led_red_2 { label = "led_red_2"; gpios = <&gpio ASPEED_GPIO(C, 0) GPIO_ACTIVE_LOW>; };
+				led_red_3 { label = "led_red_3"; gpios = <&gpio ASPEED_GPIO(C, 1) GPIO_ACTIVE_LOW>; };
+				led_red_4 { label = "led_red_4"; gpios = <&gpio ASPEED_GPIO(C, 2) GPIO_ACTIVE_LOW>; };
+				led_red_5 { label = "led_red_5"; gpios = <&gpio ASPEED_GPIO(C, 3) GPIO_ACTIVE_LOW>; };
+				led_red_6 { label = "led_red_6"; gpios = <&gpio ASPEED_GPIO(C, 4) GPIO_ACTIVE_LOW>; };
+				led_red_7 { label = "led_red_7"; gpios = <&gpio ASPEED_GPIO(C, 5) GPIO_ACTIVE_LOW>; };
 			};
-*/
 		};
 	};
 };
