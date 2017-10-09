@@ -15,7 +15,7 @@ leds_fd.green = {}
 
 local _M = { AUTHORIZE = true }
 
--- Functions to convert color names (red, green, yellow, off) to pair of inverted numbers (LED states)
+-- Functions to convert color names (red, green, yellow, off) to pair of numbers (LED states)
 function _M.c2nums(c)
  if c == 'r' or c == 'R' then return 1,0 end
  if c == 'g' or c == 'G' then return 0,1 end
@@ -47,25 +47,45 @@ function _M.setLed(led,color)
   end
 end
 
+-- Get board type
+function _M.boardType()
+  local f = nixio.open('/tmp/openrack-board-type','r')
+  if f == nill then return 'CB' end
+  local t = f:read(8)
+  f:close()
+  return t
+end
+
 -- Open files and save descriptors
-for led = 1,7 do
-  for i, color in ipairs({'red', 'green'}) do
-    local fname = '/sys/class/leds/led_'..tostring(color)..'_'..tostring(led)..'/brightness'
-    local f = nixio.open(fname,'r+')
-    if f == nil then
-       ngx.log(ngx.STDERR,'Unable to open ', fname)
-    else
-       leds_fd[color][led] = f
+function _M.fdOpen()
+  for led = 1,7 do
+    for i, color in ipairs({'red', 'green'}) do
+      local fname = '/sys/class/leds/led_'..tostring(color)..'_'..tostring(led)..'/brightness'
+      local f = nixio.open(fname,'r+')
+      if f == nil then
+         ngx.log(ngx.STDERR,'Unable to open ', fname)
+      else
+         leds_fd[color][led] = f
+      end
     end
   end
 end
 
 -- Do funny test
-for i, color in ipairs({'R', 'G', 'Y', 'O'}) do
-  for led = 1,7 do
-    _M.setLed(led,color)
-    os.execute("sleep 0")
+function _M.funnyTest()
+  for i, color in ipairs({'R', 'G', 'Y', 'O'}) do
+    for led = 1,7 do
+      _M.setLed(led,color)
+      os.execute("sleep 0")
+    end
   end
+end
+
+-- Main part
+local boardType = _M.boardType()
+if boardType == 'CB' then
+  _M.fdOpen()
+  _M.funnyTest()
 end
 
 function _M.get_json()
@@ -80,6 +100,7 @@ function _M.get_json()
 end
 
 function _M.get(self)
+    if boardType == 'RMC' then return cjson_encode({ status = 'fail', message = '400 WRONG BOARD' }) end
     local inkey = self.match.key
     if inkey ~= nil and tonumber(inkey) > 0 and tonumber(inkey) < 8 then
       local colors = {}
@@ -99,6 +120,7 @@ function _M.get(self)
 end
 
 function _M.post(self)
+    if boardType == 'RMC' then return cjson_encode({ status = 'fail', message = '400 WRONG BOARD' }) end
     local inkey = self.match.key
     local js = _M.get_json()
     if (not js or type(js) ~= 'string') then return cjson_encode({ status = 'fail', message = '400 BAD', error = err }) end
