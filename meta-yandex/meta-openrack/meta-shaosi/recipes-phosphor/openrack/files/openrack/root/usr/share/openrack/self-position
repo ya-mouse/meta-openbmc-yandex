@@ -114,7 +114,6 @@ if [ "$t" = "RMC" ]; then
 else
     systemctl enable obmc-pid3.service
     systemctl daemon-reload
-    systemctl start obmc-pid3.service
 fi
 
 if [ "$old_name" != "$name" ]; then
