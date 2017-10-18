@@ -66,7 +66,7 @@ if not db_resty:connect('/run/openresty/socket') then exit(-1) end
 function resty_event(ufd, events)
     local d, errno, errmsg = ufd:read(4096)
     if d == '' or d == nil then
-        -- print('RECONNECT', events)
+        print('RECONNECT', events)
         db_resty:close()
         db_resty = nixio.socket('unix', 'stream')
 	db_resty:setopt('socket','keepalive',1)
@@ -90,7 +90,7 @@ getmetatable(db_resty).rawreq = function(self, url, name, value, method)
     body = (method or 'POST')..' '..url.." HTTP/1.1\r\nUser-Agent: collector/1.0\r\nAccept: */*\r\nHost: localhost\r\nContent-type: application/json\r\nConnection: keep-alive\r\nContent-Length: "..#body.."\r\n\r\n"..body.."\r\n\r\n"
     local cnt, errno, errmsg = db_resty:write(body)
     if errno ~= nil then
-        -- print('RECONNECT', errno, errmsg)
+        print('RECONNECT', errno, errmsg)
         db_resty:close()
         db_resty = nixio.socket('unix', 'stream')
 	db_resty:setopt('socket','keepalive',1)
@@ -105,6 +105,8 @@ getmetatable(db_resty).request = function(self, devnum, name, value, method)
     local url = '/api/storage/'..board_name
     if type(devnum) == 'number' then
         devnum = devnum + 1
+        url = url..'/'..tostring(devnum)
+    else
         url = url..'/'..tostring(devnum)
     end
     db_resty:rawreq(url, name, value, method)
