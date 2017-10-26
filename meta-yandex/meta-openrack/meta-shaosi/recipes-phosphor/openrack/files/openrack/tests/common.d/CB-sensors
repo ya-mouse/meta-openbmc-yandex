@@ -1,0 +1,56 @@
+#!/bin/bash -e
+
+test_cb_sensors()
+{
+	local bus=$1
+	local test_48=$2
+
+	# Bind all slave drivers
+	io_en $bus 0x24
+	sdr_en $bus 0x2f w83795g
+	sdr_en $bus 0x40 ina219
+	[ -z "$test_48" ] || sdr_en $bus 0x48 tmp75
+	sdr_en $bus 0x49 tmp75
+	i2c_en $bus 0x56 24c256
+
+	# sdr_hwmon $bus 0x48
+	# sdr_read $bus 0x49
+	# sdr_get $bus 0x49 temp1
+
+	# Do actual tests
+	test_sdr_range $bus 0x40 in1 $V12_LO $V12_HI
+	[ -z "$test_48" ] || test_sdr_range $bus 0x48 temp1 $TEMP_LO $TEMP_HI
+	test_sdr_range $bus 0x49 temp1 $TEMP_LO $TEMP_HI
+
+	test_sdr_range $bus 0x2f '(\+3.3V|3VSB)' $V33_LO $V33_HI
+
+	# Stop all FANs
+	log "     ...set pwm to 0%%\n"
+	sdr_set $bus 0x2f pwm[1-8] 0
+	sleep 5
+	test_sdr_range $bus 0x2f fan.* $FAN0_LO $FAN0_HI
+	# Set 50%
+	log "     ...set pwm to 50%%\n"
+	sdr_set $bus 0x2f pwm[1-8] 128
+	sleep 5
+	test_sdr_range $bus 0x2f fan.* $FAN50_LO $FAN50_HI
+	# Set 100%
+	log "     ...set pwm to 100%%\n"
+	sdr_set $bus 0x2f pwm[1-8] 255
+	sleep 5
+	test_sdr_range $bus 0x2f fan.* $FAN100_LO $FAN100_HI
+	# Set 50%
+	log "     ...set pwm to 50%%\n"
+	sdr_set $bus 0x2f pwm[1-8] 128
+	sleep 5
+
+	# Check FRU
+	test_eeprom "Checking FRU" $bus 0x56
+
+	# Unbind all drivers
+	sdr_del $bus 0x49
+	[ -z "$test_48" ] || sdr_del $bus 0x48
+	sdr_del $bus 0x40
+	sdr_del $bus 0x2f
+	io_del $bus 0x24
+}

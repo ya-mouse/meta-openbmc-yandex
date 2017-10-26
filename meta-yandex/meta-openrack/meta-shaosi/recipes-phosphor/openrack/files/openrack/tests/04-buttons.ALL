@@ -1,0 +1,45 @@
+#!/bin/bash -e
+
+# Disable HW reset
+scu3c=$(iotools mmio_read32 0x1e6e203c)
+scu80=$(iotools mmio_read32 0x1e6e2080)
+scu3c=$((scu3c & ~8))
+scu80=$((scu80 & ~0x8000))
+iotools mmio_write32 0x1e6e2080 $scu80
+iotools mmio_write32 0x1e6e203c $scu3c
+
+gpio_en 0 H.1
+gpio_en 0 B.7
+
+test_code "<< Press SW_RST button >>" gpio_is_changed 0 H.1 $BTN_MAX_RETRY
+test_code "<< Press HW_RST button >>" gpio_is_changed 0 B.7 $BTN_MAX_RETRY
+
+gpio_del 0 B.7
+gpio_del 0 H.1
+
+test_cb_port()
+{
+	[ $BT = CB ] || return 128
+
+	local retry=0
+	local is7=
+	while [ $(board_addr -f) = $BA -o $(board_addr) = 7 ] && [ $retry -lt $CB_PORT_RETRY ]; do
+		sleep 1
+		[ $(board_addr) != 7 -o -n "$is7" ] || { log "\n   ...port disconnected" 1>&2; is7=1; }
+	done
+	if [ $(board_addr) -ne $CB_PORT_CHECK ]; then
+		log "   ...current port is $(board_addr), expected $CB_PORT_CHECK"
+		return 1
+	fi
+	[ $retry != $CB_PORT_RETRY ]
+}
+
+test_code "<< Change I2C common bus connection to port CB$CB_PORT_CHECK >>" test_cb_port
+
+# Enable HW reset
+scu3c=$(iotools mmio_read32 0x1e6e203c)
+scu80=$(iotools mmio_read32 0x1e6e2080)
+scu3c=$((scu3c | 8))
+scu80=$((scu80 | 0x8000))
+iotools mmio_write32 0x1e6e2080 $scu80
+iotools mmio_write32 0x1e6e203c $scu3c

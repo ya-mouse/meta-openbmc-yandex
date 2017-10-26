@@ -1,3 +1,6 @@
+do_compile_remove[vardeps] = "BUILD_ID VERSION VERSION_ID"
+do_compile[vardepsxeclude] = "DATETIME BUILD_ID VERSION VERSION_ID NAME PRETTY_NAME"
+
 python() {
         import os
         import subprocess

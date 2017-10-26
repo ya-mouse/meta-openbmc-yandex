@@ -1,0 +1,17 @@
+#!/bin/bash -e
+
+log "Start background LAN tests"
+
+iperf_client()
+{
+	# Run over switch port
+	iperf -t $IPERF_RUN_TIME -c $IPERF_HOST_IP -d 1>/tmp/iperf.log 2>/tmp/iperf.err
+	for i in `seq 6`; do
+		log "\n====== Change LAN port to $i and hit <Enter> ======\n"
+		read
+		iperf -t $IPERF_RUN_TIME -d -c $IPERF_HOST_IP 1>/tmp/iperf.log 2>/tmp/iperf.err
+	done
+}
+
+iperf_client &
+echo $! > /tmp/iperf-client.pid

@@ -6,7 +6,8 @@ LICENSE = "BSD"
 
 LIC_FILES_CHKSUM = "file://LICENSE;md5=c9d0cd0a1fddeb5c3cecce737c04d872"
 
-SRC_URI = "file://lua-uloop-${PV}.tar.gz"
+#SRC_URI = "file://lua-uloop-${PV}.tar.gz"
+SRC_URI = "file://lua-uloop-2016-07-29"
 
 S = "${WORKDIR}/${PN}-${PV}"
 SYSROOTS = "${STAGING_DIR}/${MACHINE}"

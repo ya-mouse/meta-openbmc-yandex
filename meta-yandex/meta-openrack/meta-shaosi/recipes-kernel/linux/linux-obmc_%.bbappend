@@ -28,6 +28,9 @@ SRC_URI += "file://021-i2c-driver-order.patch"
 SRC_URI += "file://022-ftgmac100-sw-reset.patch"
 SRC_URI += "file://023-crypto-hace.patch"
 SRC_URI += "file://024-slave-i2c-16bit.patch"
+# SRC_URI += "file://025-ftgmac100-allmulti.patch"
+SRC_URI += "file://026-ftgmac100-mcast.patch"
+
 
 SRC_URI += "file://080-b53-pvlan-hack.patch"
 ## SRC_URI += "file://081-delay-hack.patch"
@@ -44,6 +47,7 @@ SRC_URI += "file://103-raspberrypi-of.patch"
 
 # SRC_URI += "file://085-ipmi-slave-addr.patch"
 SRC_URI += "file://086-ipmi-hacks.patch"
+SRC_URI += "file://90-ina2xx.patch"
 
 SRC_URI += "file://shaosi.cfg"
 SRC_URI += "file://aspeed-shaosi-gb30.dts"

@@ -1,0 +1,16 @@
+[Match]
+Name=eth1
+
+[Network]
+DHCP=yes
+VLAN=racklan
+
+
+root@RMC-A:~/changes# cat 20-racklan.netdev 
+[NetDev]
+Name=racklan
+Kind=vlan
+
+[VLAN]
+Id=1234
+

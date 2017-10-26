@@ -1,7 +1,116 @@
-#!/bin/sh
+#!/bin/bash
+# Wrapper around P.I.D. fan control process
+# Waits for the system to be ready for PID, starts it
+# Every SleepTime seconds gets nodelist with types via API
+# If there is something new - restart PID
+# If the wrapper is killed - kill the PID either
+# 
 
-while [ ! -e /run/phoshpor-gevent.socket ] ; do
+# Get args from files
+CB=$(cat /etc/openrack-board | tr -s "-" " " | awk '{print $2}')
+
+if [ -z "$CB" ]; then
+ CB=1
+fi
+ARGS="-n ${CB}"
+
+# Cycle duration
+SleepTime=5
+
+# Get our CB number
+CB=`cat /etc/openrack-board`
+
+WGET_PRE="/usr/bin/wget -O - -q http://127.0.0.1/api/storage/${CB}/"
+WGET_POST="/type"
+
+SEDSTR="s/.*type\":\([0-9]\).*/\1/p"
+
+RESTART_CMD="/bin/kill -9"
+
+PIDCMD="/usr/sbin/pid3"
+
+Nl_cur=(-1 -1 -1 -1 -1 -1)
+Nl_prev=(-1 -1 -1 -1 -1 -1)
+FirstRun=1
+
+RestartDelay=30
+
+# Set fans to failsafe mode
+/usr/sbin/safefans.sh
+
+# Wait for nginx start
+while [ ! -e /run/openresty/socket ] ; do
     sleep 5
 done
 
-exec /usr/sbin/pid3 $@
+# Catch signals
+trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
+
+# HACK Wait for the CB to be old enough
+#uptime=$(cat /proc/uptime  | awk -F "." '{print $1}')
+#if [ $uptime -le 90 ]; then
+#   sleep 5
+#   echo "To early to start, suiciding"
+#   systemctl restart obmc-shaosid
+#fi
+
+# Start PID and get its' PID 
+sleep ${RestartDelay}
+${PIDCMD} ${ARGS} & 
+PIDPID=$!
+
+# Circulate forever until death
+while [ 1 ]; do 
+ # Copy cur to prev
+ for  i in {1..6}; do 
+   Nl_prev[${i}]=${Nl_cur[${i}]}
+ done
+ 
+ # Get current state
+ for node in {1..6}; do
+  WGET=${WGET_PRE}${node}${WGET_POST} 
+  APIRC=$(${WGET})
+  NodeType=$(echo "${APIRC}" | sed -n ${SEDSTR})
+ 
+  if [ -z "$NodeType" ]; then
+   NodeType=-1
+  fi
+  
+  Nl_cur[${node}]=${NodeType}
+ done
+
+ # Check if it's first run
+ if [ $FirstRun == 1 ]; then
+  FirstRun=0
+  sleep ${SleepTime}
+  continue
+ fi
+
+ # Check if PID is alive 
+ if [ ! -d "/proc/${PIDPID}" ]; then
+  sleep ${RestartDelay}
+  ${PIDCMD} ${ARGS} &
+  PIDPID=$!
+  continue
+ fi
+
+ # Compare arrays
+ Changed=0
+ for node in {1..6}; do 
+  if [ ${Nl_cur[$node]} != ${Nl_prev[$node]} ] && [ ${Nl_prev[$node]} == -1 ]; then
+   Changed=1
+  fi 
+ done
+
+ if [ ${Changed} == 1 ]; then
+  # Do PID restart
+  ${RESTART_CMD} ${PIDPID} > /dev/null 2>&1
+
+  sleep ${RestartDelay}
+  ${PIDCMD} ${ARGS} & 
+  PIDPID=$!
+ fi
+
+ sleep ${SleepTime} 
+done
+

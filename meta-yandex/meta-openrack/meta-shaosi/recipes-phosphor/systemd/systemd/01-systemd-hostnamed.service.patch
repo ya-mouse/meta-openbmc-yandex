@@ -1,0 +1,12 @@
+diff --git a/units/systemd-hostnamed.service.in b/units/systemd-hostnamed.service.in
+index b7079e4..f861e3b 100644
+--- a/units/systemd-hostnamed.service.in
++++ b/units/systemd-hostnamed.service.in
+@@ -17,6 +17,6 @@ CapabilityBoundingSet=CAP_SYS_ADMIN
+ WatchdogSec=3min
+ PrivateTmp=yes
+ PrivateDevices=yes
+-PrivateNetwork=yes
++#PrivateNetwork=yes
+ ProtectSystem=yes
+ ProtectHome=yes
