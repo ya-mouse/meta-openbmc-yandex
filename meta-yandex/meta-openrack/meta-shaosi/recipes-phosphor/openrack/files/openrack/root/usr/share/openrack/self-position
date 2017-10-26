@@ -175,3 +175,26 @@ else
         printf "$data" | sed -n 's,mac1=,,p' | xargs /sbin/ifconfig eth1 hw ether
     fi
 fi
+
+prefix="fd80:c001:beef"
+iface="racklan"
+
+# Setup rack VLAN
+if [ "${t}" = "RMC" ]; then
+  vlanip="${prefix}::4ead:${pos}/64"
+else
+  vlanip="${prefix}::cb:${pos}/64"
+fi
+
+echo "Setting up rack VLAN, address=${vlanip}"
+
+cat <<EOF > /etc/systemd/network/30-racklan.network
+[Match]
+Name=racklan
+
+[Network]
+DHCP=no
+Address=${vlanip}
+Description="Rack VLAN"
+BindCarrier=eth1
+EOF

@@ -13,6 +13,7 @@ SRC_URI += "file://lua"
 
 do_install() {
         install -d ${D}/etc/overlays ${D}/usr/sbin ${D}/usr/share/lua/5.1 ${D}/usr/share/openrack/tests
+	install -d ${D}/etc/systemd/network ${D}/etc/systemd/system
 
         install -m 0755 ${WORKDIR}/b53tool.lua ${D}/usr/sbin/b53tool
         install -m 0755 ${WORKDIR}/miitool.lua ${D}/usr/sbin/miitool
@@ -43,6 +44,9 @@ fi
 }
 
 FILES_${PN} += "${sysconfdir}/default \
+		${sysconfdir}/systemd/network \
+		${sysconfdir}/systemd/system \
+		${sysconfdir}/hosts \
                 ${systemd_unitdir}/system/*.service \
                 ${datadir}/openrack \
                 ${sbindir} \
