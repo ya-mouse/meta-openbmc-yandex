@@ -1,0 +1,17 @@
+#!/bin/bash
+# Print fan's PWMs and RPMs for CB
+
+source /usr/share/openrack/functions
+
+t=$(board_type)${factory_test:+-factory}
+
+if [ "$t" == "CB" ]; then
+    pwm=$(cat /sys/class/hwmon/hwmon0/device/pwm{1..8} | tr -s "\n" " ")
+    rpm=$(cat /sys/class/hwmon/hwmon0/device/fan{1..8}_input | tr -s "\n" " ")
+    echo "PWM:$pwm RPM:$rpm"
+    exit 0
+  else
+    echo "Not CB"
+    exit -1
+fi
+
