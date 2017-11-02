@@ -20,6 +20,8 @@ get_fw_env_var() {
 	tr '\n\000' '\r\n' |
 	tail -c +5 | tail -c +${copies-1} | 
 	sed -ne '/^$/,$d' -e "s/^$1=//p"
+	# This is much (x5 times) faster
+	# strings /run/fw_env | grep $1 |  sed -ne '/^$/,$d' -e "s/^$1=//p"
 }
 
 mac0=$(get_fw_env_var ethaddr)
@@ -176,25 +178,5 @@ else
     fi
 fi
 
-prefix="fd80:c001:beef"
-iface="racklan"
+/usr/share/openrack/genprefix
 
-# Setup rack VLAN
-if [ "${t}" = "RMC" ]; then
-  vlanip="${prefix}::4ead:${pos}/64"
-else
-  vlanip="${prefix}::cb:${pos}/64"
-fi
-
-echo "Setting up rack VLAN, address=${vlanip}"
-
-cat <<EOF > /etc/systemd/network/30-racklan.network
-[Match]
-Name=racklan
-
-[Network]
-DHCP=no
-Address=${vlanip}
-Description="Rack VLAN"
-BindCarrier=eth1
-EOF

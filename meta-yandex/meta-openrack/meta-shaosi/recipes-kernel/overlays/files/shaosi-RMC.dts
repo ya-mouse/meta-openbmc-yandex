@@ -19,19 +19,17 @@
 		__overlay__ {
 			status = "okay";
 
-	no-hw-checksum;
+			no-hw-checksum;
+			phy-handle = <&phy1>;
+			phy-mode = "rgmii";
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_rgmii2_default &pinctrl_mdio2_default>;
 
-	phy-handle = <&phy1>;
-	phy-mode = "rgmii";
-
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_rgmii2_default &pinctrl_mdio2_default>;
-
-	mdio {
-		phy1: phy@0 {
-			compatible = "ethernet-phy-id001c.c915";
-			reg = <0>;
-		};
+			mdio {
+				phy1: phy@0 {
+					compatible = "ethernet-phy-id001c.c915";
+					reg = <0>;
+				};
 			};
 		};
 	};
@@ -89,6 +87,37 @@
 						  "RST_RMCA", "RST_RMCB", "NC_0_7", "RST_CB1", "RST_CB2",
 						  "RST_CB3", "RST_CB4", "RST_CB5", "RST_CB6",
 						  "NC_1_6", "NC_1_7";
+			};
+		};
+	};
+	fragment@4 {
+		target = <&i2c0>;
+		__overlay__ {
+			/* CBs virtual eeproms */
+			status = "okay";
+			cb1-eeprom {
+				compatible = "atmel,24c02";
+				reg = <0x32>;
+			};
+			cb2-eeprom {
+				compatible = "atmel,24c02";
+				reg = <0x33>;
+			};
+			cb3-eeprom {
+				compatible = "atmel,24c02";
+				reg = <0x34>;
+			};
+			cb4-eeprom {
+				compatible = "atmel,24c02";
+				reg = <0x35>;
+			};
+			cb5-eeprom {
+				compatible = "atmel,24c02";
+				reg = <0x36>;
+			};
+			cb6-eeprom {
+				compatible = "atmel,24c02";
+				reg = <0x37>;
 			};
 		};
 	};

@@ -218,10 +218,10 @@
 						compatible = "national,lm75";
 						reg = <0x49>;
 					};
-			fru {
-				compatible = "atmel,24c256";
-				reg = <0x56>;
-			};
+					fru {
+						compatible = "atmel,24c256";
+						reg = <0x56>;
+					};
 		};
 	};
 
@@ -253,6 +253,22 @@
 				led_red_5 { label = "led_red_5"; gpios = <&gpio ASPEED_GPIO(C, 3) GPIO_ACTIVE_LOW>; };
 				led_red_6 { label = "led_red_6"; gpios = <&gpio ASPEED_GPIO(C, 4) GPIO_ACTIVE_LOW>; };
 				led_red_7 { label = "led_red_7"; gpios = <&gpio ASPEED_GPIO(C, 5) GPIO_ACTIVE_LOW>; };
+			};
+		};
+	};
+
+	fragment@12 {
+		target = <&i2c0>;
+		__overlay__ {
+			/* RMC-A virtual eeprom */
+			status = "okay";
+			rmca-eeprom {
+				compatible = "atmel,24c02";
+				reg = <0x39>;
+			};
+			rmcb-eeprom {
+				compatible = "atmel,24c02";
+				reg = <0x3b>;
 			};
 		};
 	};

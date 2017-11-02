@@ -46,7 +46,6 @@ fi
 FILES_${PN} += "${sysconfdir}/default \
 		${sysconfdir}/systemd/network \
 		${sysconfdir}/systemd/system \
-		${sysconfdir}/hosts \
                 ${systemd_unitdir}/system/*.service \
                 ${datadir}/openrack \
                 ${sbindir} \
