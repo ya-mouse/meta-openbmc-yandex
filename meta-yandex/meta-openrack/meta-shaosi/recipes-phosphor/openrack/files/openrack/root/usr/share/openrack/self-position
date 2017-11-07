@@ -178,5 +178,8 @@ else
     fi
 fi
 
+# Write serial number
+echo $serial > /tmp/board-serial
+
 /usr/share/openrack/genprefix
 

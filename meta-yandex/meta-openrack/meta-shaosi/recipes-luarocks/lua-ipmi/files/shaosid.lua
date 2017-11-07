@@ -56,6 +56,16 @@ if file ~= nil then
     end
 end
 
+-- Read serial number
+local serial='UNKNOWN'
+local serialfile = '/tmp/board-serial'
+local f = io.open(serialfile)
+if not f then return serial end
+for line in f:lines() do
+    serial = line
+end
+f:close()
+
 uloop.init()
 
 -- Setup db_resty
@@ -563,6 +573,7 @@ function fn_post_selfinfo()
    db_resty:rawreq('','SELF/type', board_type,'POST')
    db_resty:rawreq('','SELF/version', os_release,'POST')
    db_resty:rawreq('','SELF/number', board_number,'POST')
+   db_resty:rawreq('','SELF/serial', serial,'POST')
 end
 
 fn_post_selfinfo()
