@@ -1,0 +1,15 @@
+#!/bin/bash
+# Just print MACs from EEPROM, U-Boot env and interfaces
+
+mac0_if=$(ifconfig eth0 2>&1| grep eth0 | awk '{print $5}')
+mac1_if=$(ifconfig eth1 2>&1| grep eth1 | awk '{print $5}')
+eeprom=$(cat /sys/class/i2c-dev/i2c-7/device/7-0056/eeprom | strings)
+mac0_eep=$(echo ${eeprom} | sed 's/.*mac0=\([^ ]*\).*/\1/')
+mac1_eep=$(echo ${eeprom} | sed 's/.*mac1=\([^ ]*\).*/\1/')
+env=$(fw_printenv)
+mac0_env=$(echo ${env} | sed 's/.*ethaddr=\([^ ]*\).*/\1/')
+mac1_env=$(echo ${env} | sed 's/.*eth1addr=\([^ ]*\).*/\1/')
+echo ifconfig macs are $mac0_if $mac1_if
+echo eeprom macs are $mac0_eep $mac1_eep
+echo printenv macs are $mac0_env $mac1_env
+

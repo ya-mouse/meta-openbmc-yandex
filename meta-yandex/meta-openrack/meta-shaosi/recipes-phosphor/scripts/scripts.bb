@@ -1,5 +1,5 @@
 DESCRIPTION = "Script to set MAC and save MAC addresses"
-# TODO: put license
+
 LICENSE = "PD"
 LIC_FILES_CHKSUM = "file://setmacs.sh;beginline=1;endline=2;md5=88a069a93872f62fcd7aa03b8d78ae93"
 BB_STRICT_CHECKSUM = "0"
@@ -14,6 +14,7 @@ SRC_URI += "file://getpwm"
 SRC_URI += "file://getver"
 SRC_URI += "file://pidrst"
 SRC_URI += "file://shaosidrst"
+SRC_URI += "file://checkmacs"
 
 S = "${WORKDIR}"
 
@@ -31,9 +32,11 @@ do_install () {
     install -m 0755 ${WORKDIR}/getver ${D}${sbindir}/
     install -m 0755 ${WORKDIR}/pidrst ${D}${sbindir}/
     install -m 0755 ${WORKDIR}/shaosidrst ${D}${sbindir}/
+    install -m 0755 ${WORKDIR}/checkmacs ${D}${sbindir}/
 }
 
 FILES_${PN} = "${sbindir}/setmacs.sh ${sbindir}/reset_cb.sh ${sbindir}/reset_bmc.sh \
 		${sbindir}/coolingrst ${sbindir}/getapi ${sbindir}/getpwm \
-		${sbindir}/getver ${sbindir}/pidrst ${sbindir}/shaosidrst"
+		${sbindir}/getver ${sbindir}/pidrst ${sbindir}/shaosidrst \
+		${sbindir}/checkmacs"
 
