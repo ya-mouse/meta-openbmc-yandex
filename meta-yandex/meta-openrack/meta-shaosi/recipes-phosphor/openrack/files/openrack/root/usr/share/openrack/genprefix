@@ -165,32 +165,15 @@ while read lhs rhs; do
     fi
 done < <(strings /run/fw_env 2>/dev/null | grep -E '(ethaddr|eth1addr|serialnumber|factory)')
 
-#mac0="${ethaddr}"
-#mac1="${eth1addr}"
-#serial="${serialnumber}"
-#factory_test="${factory_test_mode}"
-
 a=$(board_addr -f)
 name=$(board_name)
 pos=$(board_position)
 t=$(board_type)${factory_test:+-factory}
 
-
-#echo "mac0=$mac0 mac1=$mac1 serial=$serial a=$a name=$name pos=$pos t=$t factory_test=$factory_test"
-#mac=$(printf "$mac0\n$mac1\n" | sort -r | tail -1)
-#echo "Lowest mac is $mac"
-#mac=""
-#s=$(mac2prefix $mac)
-#echo "Prefix is $s"
-#exit
-
 # self eeprom
 [[ $t = CB ]] || a=$(printf "%x" $((9 + a*2)))
 eep_self="/sys/bus/i2c/devices/0-103$a/slave-eeprom"
 
-#asdf=$(read_eep $rmca 0x00 128)
-
-# CB part
 # 1. Try to read from RMC
 p=$(get_saved_prefix $eep_rmca )
 if [[ "$p" = "ERROR" ]]; then
@@ -242,7 +225,7 @@ p=$(get_mac_prefix $eep_rmcb); if [[ "$p" != "ERROR" ]]; then echo $p >> $tmp; f
 # Get self MAC
 p=$(get_mac_prefix $eep_self); if [[ "$p" != "ERROR" ]]; then echo $p >> $tmp; fi
 
-# TODO Here is the point where CB an RMC distinguish
+# Here is the point where CB an RMC distinguish
 for i in {1..6}; do
    eep=""
    if [[ $i -ne $pos ]]; then

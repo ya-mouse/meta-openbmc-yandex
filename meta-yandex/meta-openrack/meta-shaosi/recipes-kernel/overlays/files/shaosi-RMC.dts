@@ -93,8 +93,17 @@
 	fragment@4 {
 		target = <&i2c0>;
 		__overlay__ {
-			/* CBs virtual eeproms */
 			status = "okay";
+			/* RMCs virtual eeproms */
+			rmca-eeprom {
+				compatible = "atmel,24c02";
+				reg = <0x39>;
+			};
+			rmcb-eeprom {
+				compatible = "atmel,24c02";
+				reg = <0x3b>;
+			};
+			/* CBs virtual eeproms */
 			cb1-eeprom {
 				compatible = "atmel,24c02";
 				reg = <0x32>;
