@@ -3,7 +3,7 @@
 export PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
 cat << _EOF
 This is script to set MAC addresses.
-Warning: use with caution if running over ssh as you can drop the connection!
+Warning: use with caution if running over ssh as you can loose the IP connectivity after!
 _EOF
 
 # Get addresses and serial
@@ -40,32 +40,9 @@ printf "mac0=$mac0\nmac1=$mac1\nserial=$serial_eep\n" | dd of=/sys/bus/i2c/devic
 fw_setenv ethaddr ${mac0}
 fw_setenv eth1addr ${mac1}
 
-echo "Data is written"
+echo "Data is written. Will reboot in 5 seconds. Press CTRL-C NOW to prevent reboot!!!"
+sleep 5
 
-# Check tty
-tty | grep "ttyS" > /dev/null 2>&1
-if [ ! "$?" -eq "0" ]; then
- echo "Not on local console, not setting MACs on eth0/eth1"
- echo "Changes will apply after reboot"
- echo "Exiting"
- exit
-fi
-
-echo "WARNING: NETWORK CONNECTIONS WILL BE LOST!!!"
-echo "PRESS CTRL-C TO TERMINATE SCRIPT IF NOT SURE!!!"
-read -p "Going to set MAC address on eth0 and eth1. Press ENTER to continue or CTRL-C to terminate script"
-read -r -p "Are you sure to proceed? [Yes/N] " response
-if [ "$response" != "Yes" ]; then
- echo "Terminating script"
- exit
-fi
-
-ifconfig eth0 down
-ifconfig eth0 hw ether ${mac0}
-ifconfig eth0 up
-ifconfig eth1 down
-ifconfig eth1 hw ether ${mac1}
-ifconfig eth1 up
-
-echo "All is done. Please reboot"
+echo "All is done. Rebooting. So Long, and Thanks for all the Fish."
+/sbin/reboot
 
