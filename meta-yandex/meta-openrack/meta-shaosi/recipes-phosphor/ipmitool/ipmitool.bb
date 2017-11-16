@@ -6,7 +6,7 @@ PR = "r1"
 
 inherit obmc-phosphor-license
 
-RDEPENDS_${PN} += "libcrypto "
+RDEPENDS_${PN} += "libcrypto systemd "
 
 
 SRC_URI += "git://github.com/openbmc/ipmitool"

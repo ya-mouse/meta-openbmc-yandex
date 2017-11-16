@@ -1,0 +1,7 @@
+[NetDev]
+Name=racklan
+Kind=vlan
+
+[VLAN]
+Id=4090
+

@@ -1,0 +1,3 @@
+#!/bin/bash
+systemctl restart obmc-pid3
+

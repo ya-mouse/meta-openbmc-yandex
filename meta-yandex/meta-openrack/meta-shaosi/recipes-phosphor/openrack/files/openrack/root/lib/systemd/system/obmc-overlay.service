@@ -1,0 +1,22 @@
+#  This file is part of systemd.
+#
+#  systemd is free software; you can redistribute it and/or modify it
+#  under the terms of the GNU Lesser General Public License as published by
+#  the Free Software Foundation; either version 2.1 of the License, or
+#  (at your option) any later version.
+
+[Unit]
+Description=Load overlays for board
+DefaultDependencies=no
+Conflicts=shutdown.target
+After=local-fs.target
+Before=sysinit.target
+
+[Service]
+ExecStart=-/usr/share/openrack/self-position --system-init
+Type=oneshot
+RemainAfterExit=No
+TimeoutSec=180
+
+[Install]
+WantedBy=local-fs.target

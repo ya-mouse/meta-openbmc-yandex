@@ -1,19 +1,4 @@
-do_install_append() {
-     sed 's/#RuntimeWatchdogSec=0/RuntimeWatchdogSec=20s/' \
-         -i ${D}${sysconfdir}/systemd/system.conf
+FILESEXTRAPATHS_append := "${THISDIR}/${PN}:"
+SRC_URI += "file://01-systemd-hostnamed.service.patch"
+SRC_URI += "file://02-networkd-link.c.patch"
 
-     cat <<EOF>${D}/usr/lib/sysctl.d/60-enable_ra.conf
-net.ipv6.conf.all.accept_ra=1
-net.ipv6.conf.eth0.accept_ra=1
-net.ipv6.conf.eth1.accept_ra=1
-EOF
-
-     cat <<EOF1>${D}/usr/lib/systemd/network/ipv6.network
-[Match]
-Name=eth*
-[Network]
-IPv6AcceptRouterAdvertisements=yes
-EOF1
-
-
-}

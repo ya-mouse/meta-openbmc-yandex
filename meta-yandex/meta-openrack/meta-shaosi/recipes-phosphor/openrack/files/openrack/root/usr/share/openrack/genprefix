@@ -1,0 +1,249 @@
+#!/bin/bash
+
+. /usr/share/openrack/functions
+
+# Setup some consts
+
+# RMC and CB eep devices                          
+eep_rmca="/sys/bus/i2c/devices/0-0039/eeprom"             
+eep_rmcb="/sys/bus/i2c/devices/0-003b/eeprom"             
+                                                          
+eep_cb1="/sys/bus/i2c/devices/0-0032/eeprom"              
+eep_cb2="/sys/bus/i2c/devices/0-0033/eeprom"              
+eep_cb3="/sys/bus/i2c/devices/0-0034/eeprom"              
+eep_cb4="/sys/bus/i2c/devices/0-0035/eeprom"              
+eep_cb5="/sys/bus/i2c/devices/0-0036/eeprom"              
+eep_cb6="/sys/bus/i2c/devices/0-0037/eeprom"  
+
+# Functions 
+read_eep() {
+	# Arguments:
+	# $1 file of eeprom
+	# $2 byte address, hex
+	# $3 bytes count
+	# Returns: No more than $3 readable chars
+	local a=$(($2))
+	local eep=$(dd if=$1 bs=1 count=$3 skip=$a 2>/dev/null || echo ERROR)
+	echo $eep | strings
+}
+
+write_eep() {
+	# Arguments:
+	# $1 file of eeprom
+	# $2 address to write, hex
+	# $3 data to write
+	local a=$(($2))
+	data=$(printf "$3\n")
+	echo "$data" | dd of=$1 bs=1 seek=$(($2)) 2>/dev/null
+}
+
+mac2prefix() {
+	# Arguments:
+	# $1 mac address (6 zero-padded bytes in hex divided by :)
+	# Returns: IPv6 prefix with fd00:<6 bytes of MAC>
+	if [[ -z $1 ]]; then
+		echo "fd00:eeee:eeee:eeee"
+		return
+	fi
+	mac=$(echo $1 | tr -d ":")
+	s=${mac:0:4}
+	for((i=4;i<${#mac};i+=4)); do
+		s=$s:${mac:$i:4}
+	done
+	s="fd00:$s"
+	echo $s
+}
+
+get_saved_prefix() {
+	# Arguments: 
+	# $1 eeprom file
+	# Returns IPv6 prefix or error
+
+	# if the file is empty (no RMC or empty VEEPROM - return ERROR prefix immediatly
+	eep=$(strings $1 2>/dev/null)
+	if [[ -z $eep ]]; then
+		echo "ERROR"
+		return
+	fi
+	prefix=$(echo "$eep" | grep prefix || echo "ERROR")
+	if [[ "$prefix" != "ERROR" ]]; then
+		prefix=${prefix##*=}
+	fi
+	echo $prefix
+}
+
+get_mac_prefix() {
+	# Arguments:
+	# $1 eeprom file
+	# Returns MAC-generated prefix
+	eep=$(strings $1 2>/dev/null)
+	if [[ -z $eep ]]; then
+		echo "ERROR"
+		return
+	fi
+
+	mac0=$(echo "$eep" | grep mac0)
+	mac1=$(echo "$eep" | grep mac1)
+
+	IFS='-'
+	mac0=${mac0##*=}
+	mac1=${mac1##*=}
+	mac=$(printf "$mac0\n$mac1\n" | sort -r | tail -1)
+	prefix=$(mac2prefix $mac)
+	echo "$prefix"
+}
+
+make_hosts() {
+	# Make /etc/hosts with CBs and RMCs addresses
+	# Arguments:
+	# $1 prefix
+	cat <<EOF > /tmp/hosts.tmpl
+127.0.0.1       localhost.localdomain           localhost
+
+# The following lines are desirable for IPv6 capable hosts
+::1     localhost ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+
+PREFIXPREFIX::4ead:a  rmc-a
+PREFIXPREFIX::4ead:b  rmc-a
+
+PREFIXPREFIX::cb:1    cb-1
+PREFIXPREFIX::cb:2    cb-2
+PREFIXPREFIX::cb:3    cb-3
+PREFIXPREFIX::cb:4    cb-4
+PREFIXPREFIX::cb:5    cb-5
+PREFIXPREFIX::cb:6    cb-6
+
+EOF
+	cat /tmp/hosts.tmpl | sed "s/PREFIXPREFIX/$1/g" > /etc/hosts
+}
+
+make_netfile() {
+	# Make network file for VLAN interface
+	# Arguments: 
+	# $1 prefix
+	# $2 board type
+	# $3 board position
+	if [ "$2" = "RMC" ]; then
+  		addr="$1::4ead:$3/64"
+	else
+		addr="$1::cb:$3/64"
+	fi
+
+	cat <<EOF > /etc/systemd/network/30-racklan.network
+[Match]
+Name=racklan
+
+[Network]
+DHCP=no
+Address=$addr
+Description="Rack VLAN"
+BindCarrier=eth1
+EOF
+}
+
+write_prefix() {
+	# Write prefix string into virtual eeprom
+	# Arguments:
+	# $1 prefix
+	# $2 eep file
+	# $3 offset in hex
+	write_eep $2 $3 "prefix=$1"
+}
+
+#################################################### MAIN ####################################################
+# Get selected U-Boot vars 
+shopt -s extglob
+IFS='= '
+while read lhs rhs; do
+  if [[ $lhs =~ ^[[:alpha:]] ]]; then
+        rhs=$(echo ${rhs} | tr -s "-" "_") # Substitute - by _ in var names
+        declare $lhs="$rhs"
+    fi
+done < <(strings /run/fw_env 2>/dev/null | grep -E '(ethaddr|eth1addr|serialnumber|factory)')
+
+a=$(board_addr -f)
+name=$(board_name)
+pos=$(board_position)
+t=$(board_type)${factory_test:+-factory}
+
+# self eeprom
+[[ $t = CB ]] || a=$(printf "%x" $((9 + a*2)))
+eep_self="/sys/bus/i2c/devices/0-103$a/slave-eeprom"
+
+# 1. Try to read from RMC
+p=$(get_saved_prefix $eep_rmca )
+if [[ "$p" = "ERROR" ]]; then
+	p=$(get_saved_prefix $eep_rmcb )
+fi
+
+if [[ "$p" != "ERROR" ]]; then
+	echo "Got RMC prefix $p"
+	# Write prefix to self EEP TODO
+	write_prefix $p $eep_rmca 0x80
+	write_prefix $p $eep_rmcb 0x80
+	write_prefix $p $eep_self 0x80
+
+	# Set prefix
+	make_hosts $p                                                                                        
+	make_netfile $p $t $pos
+	exit 0
+fi
+
+# 2. Try to read prefix from CB1-6
+for i in {1..6}; do
+   eval eep='$'eep_cb$i
+
+   if [[ $i -eq $pos ]]; then 
+	eep=$eep_self
+	#	continue
+   fi
+
+   p=$(get_saved_prefix $eep)
+   if [[ "$p" != "ERROR" ]]; then
+	echo "Got CB prefix at #$i: $p"
+	# Write prefix to self EEP
+	write_prefix $p $eep_rmca 0x80
+	write_prefix $p $eep_rmcb 0x80
+	write_prefix $p $eep_self 0x80
+
+	# Set prefix
+	make_hosts $p
+	make_netfile $p $t $pos
+	exit 0
+   fi
+done
+
+# 3. Get MACs of all alive RMMs
+tmp="/tmp/maclist.txt"
+p=$(get_mac_prefix $eep_rmca); if [[ "$p" != "ERROR" ]]; then echo $p > $tmp; fi
+p=$(get_mac_prefix $eep_rmcb); if [[ "$p" != "ERROR" ]]; then echo $p >> $tmp; fi
+
+# Get self MAC
+p=$(get_mac_prefix $eep_self); if [[ "$p" != "ERROR" ]]; then echo $p >> $tmp; fi
+
+# Here is the point where CB an RMC distinguish
+for i in {1..6}; do
+   eep=""
+   if [[ $i -ne $pos ]]; then
+	eval eep='$'eep_cb$i
+   else
+	continue
+   fi
+   p=$(get_mac_prefix $eep); if [[ "$p" != "ERROR" ]]; then echo $p >> $tmp; fi
+done
+
+p=$(cat $tmp | sort -r | tail -1)
+
+echo "Got MAC prefix $p"
+
+make_hosts $p
+make_netfile $p $t $pos
+
+write_prefix $p $eep_rmca 0x80
+write_prefix $p $eep_rmcb 0x80
+write_prefix $p $eep_self 0x80
+

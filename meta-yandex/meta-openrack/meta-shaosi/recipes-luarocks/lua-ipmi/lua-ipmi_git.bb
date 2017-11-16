@@ -13,6 +13,8 @@ SRC_URI = "file://LICENSE \
            file://api/attr.lua \
            file://api/proc.lua \
            file://api/storage.lua \
+           file://api/fanpwm.lua \
+           file://api/leds.lua \
            file://auth.lua \
 "
 
@@ -24,7 +26,7 @@ do_install () {
     install -d ${D}${datadir}${luadir}/openbmc/api
     install -m 644 ${WORKDIR}/ipmi.lua ${D}${datadir}${luadir}/ipmi.lua
     install -m 755 -pD ${WORKDIR}/shaosid.lua ${D}${sbindir}/shaosid
-    for f in api api/attr api/storage api/proc auth; do
+    for f in api api/attr api/storage api/proc api/fanpwm api/leds auth; do
         install -m 644 ${WORKDIR}/$f.lua ${D}${datadir}${luadir}/openbmc/$f.lua
     done
 }

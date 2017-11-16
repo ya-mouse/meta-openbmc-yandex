@@ -22,9 +22,9 @@
 	};
 
 	ahb: ahb {
-		fmc@1e620000 {
+		fmc:	fmc@1e620000 {
 			reg = < 0x1e620000 0x94
-				0x20000000 0x02000000 >;
+				0x20000000 0x06000000 >;
 			#address-cells = <1>;
 			#size-cells = <0>;
 			compatible = "aspeed,ast2400-fmc";
@@ -43,6 +43,21 @@
 				 */
 #include "aspeed-bmc-opp-flash-layout.dtsi"
 			};
+
+			flash@1 {
+				reg = < 1 >;
+				compatible = "jedec,spi-nor" ;
+				label = "spi2";
+				partitions {
+					compatible = "fixed-partitions";
+					raw@0 {
+						reg = < 0 0x02000000 >;
+						label = "raw";
+					};
+				};
+			};
+
+
 		};
 	};
 
